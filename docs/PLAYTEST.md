@@ -89,3 +89,35 @@ If you have a biome mod (BoP, Terralith, OTBYG), drop the jar into `run/mods/` a
 ### How to report
 
 Reply **"M2 pass"** if 1-8 all check out. If any biome looks wrong, name it and describe (e.g., "desert had grass on top" or "snowy plains had no snow"). For modded biomes, note any mod you tried + whether it integrated.
+
+---
+
+## Milestone 3 — Erosion
+
+Goal: hydraulic erosion is applied to each 256×256 region of heightmap before chunks are filled. Mountains have weathered shoulders and water-carved channels instead of clean noise contours.
+
+### What Claude has already auto-verified
+
+- All 40 JUnit tests green (8 new for `ErosionSimulator`, 6 for `RegionCache`).
+- `./gradlew runServer` with `level-type=terrascribe:terrascribe` started in 1.795 s (M1 baseline without erosion: 1.486 s — erosion adds ~300 ms for the spawn region). Spawn area generated cleanly, zero errors, region-cache LRU operating as designed.
+
+### What you visually verify
+
+| # | Step | Expected | Pass? |
+|---|---|---|---|
+| 1 | Create a fresh TerraScribe world. | World loads normally. | |
+| 2 | Find a mountain (look for a peak rising above the surrounding terrain — `/locate biome minecraft:jagged_peaks` if you want a quick teleport). | The peak should look *weathered*: shoulders are not perfectly smooth noise contours, there should be small gulleys / depressions running downhill, and the peak silhouette should be more irregular than a pure noise field would give. | |
+| 3 | Look at the valleys below mountains. | Should see channel-like depressions / scallops where simulated water flow carved into the heightmap. | |
+| 4 | Compare to a known-baseline location (e.g., teleport to (10000, 70, 10000) — a faraway region cache miss triggers erosion live). | First arrival into a new region may take a noticeable beat (~50–100 ms) while erosion runs; after that, chunks within that 256-block region load smoothly. | |
+| 5 | Fly around for a minute looking for "flat shoulder" peaks (peaks with a perfectly flat top). | There should be none — erosion knocks down sharp peaks and rounds shoulders. | |
+| 6 | Exit and close cleanly. | No terrascribe-related ERROR lines. | |
+
+### Performance notes
+
+- Each new 256×256 region triggers ~50–100 ms of erosion on first access. Player movement through new regions causes brief micro-stutters; subsequent chunk fills within that region are fast (heightmap lookups are array indexing).
+- Region cache holds up to 256 regions ≈ 64 MB. Old regions evict LRU.
+- If you notice prolonged hitching, mention it — I'll lower the droplet count or shrink region size.
+
+### How to report
+
+Reply **"M3 pass"** if 1-6 check out. If terrain looks the same as M2 (i.e., erosion isn't visible), say so — that probably means our droplet count is too low for this region size, and I'll bump it. If you see hitching during exploration, mention how bad it is.

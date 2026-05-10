@@ -10,20 +10,34 @@ The full specification is canonical: [`docs/SPEC.md`](docs/SPEC.md). When the sp
 
 ## Current milestone
 
-**Milestone 3 — Erosion.** Hydraulic erosion simulator applied to the heightmap; mountains look weathered.
+**Milestone 4 — Rivers + Lakes.** Flow-based rivers carve through terrain; lakes sit at sinks.
 
 See `docs/SPEC.md` §9 for the full milestone table.
 
-### Milestone 3 — Definition of Done (draft — refine at session start)
+### Milestone 4 — Definition of Done (draft — refine at session start)
 
-- [ ] `ErosionSimulator` (pure math) — Lague-style droplet hydraulic erosion. Configurable droplet count, inertia, capacity, deposition, erosion rate.
-- [ ] `RegionCache` (pure math wrt MC) — 512×512 regions, bounded LRU, eviction on world close. Caches per-region heightmaps + their erosion results so we don't re-run erosion per chunk.
-- [ ] Hook erosion into chunk gen path: heightmap is generated → erosion is applied per-region → chunk fills sample from eroded heightmap.
-- [ ] Visible result: mountains have erosion patterns, valleys carved by water flow. No flat-shoulder peaks.
-- [ ] Unit tests for `ErosionSimulator`: determinism, that elevation drops near droplet paths (visible erosion), and that the heightmap envelope is preserved.
-- [ ] `docs/ARCHITECTURE.md` first cut (still owed from M1).
-- [ ] `docs/PLAYTEST.md` M3 checklist; `docs/PERF.md` first cut with baseline.
+- [ ] `FlowField` (pure math) — downhill gradient accumulation across an eroded heightmap; output is per-cell "flow received from upstream".
+- [ ] `RiverCarver` (pure math) — walks the flow field, carves a channel along high-flow paths, gradient-shape based on accumulated flow.
+- [ ] `LakeFinder` (pure math) — locates closed depressions (sinks) where flow accumulates with no outlet → place water blocks.
+- [ ] Integrate into `RegionCache` builder: after erosion, compute flow, carve rivers, mark lake cells.
+- [ ] River cells produce water blocks in `fillFromNoise`.
+- [ ] Lake cells: water-filled depressions, surface blocks below water swap to sand/gravel.
+- [ ] Cross-region river continuity: rivers shouldn't snap discontinuously at region boundaries. Achieved either via region padding (preferred) or post-pass smoothing along seams.
+- [ ] Unit tests: flow accumulation conserved, river paths reach low ground / map edge, lake cells form closed pools.
+- [ ] `docs/PLAYTEST.md` M4 checklist.
 - [ ] CHANGELOG.
+
+### Milestone 3 — Erosion (PASSED-pending visual verification 2026-05-10)
+
+- [x] `ErosionSimulator` — Lague droplet hydraulic erosion. Inertia 0.05, capacity factor 4, erosion/deposit rates 0.3, gravity 4, 1% evaporation. 25k droplets × 30 steps for our 256-side region. 8 JUnit tests.
+- [x] `RegionCache` — 256-entry LRU with 256×256 float regions (~64 MB cap, slightly over spec's ~32 MB). 6 JUnit tests.
+- [x] `TerraScribeChunkGenerator` heightmap path replaced — lazy `RegionCache` keyed by world seed (derived from `RandomState.aquiferRandom().at(0,0,0).nextInt()`); builder generates base noise + applies erosion with a per-region scrambled seed.
+- [x] `runServer` smoke test: server Done in 1.795 s (vs 1.486 s baseline). +~300 ms for erosion of the spawn region. Zero errors.
+- [ ] Visual playtest pass — pending.
+- [x] `docs/PERF.md` first cut.
+- [x] `docs/PLAYTEST.md` M3 section appended.
+- [ ] `docs/ARCHITECTURE.md` — still owed (slipping to M4).
+- [x] CHANGELOG entries.
 
 ### Milestone 2 — Surface + Biomes (PASSED 2026-05-10)
 
@@ -187,6 +201,16 @@ Pulled from `docs/SPEC.md` §18:
 - Initialized git repo. Repo-local identity `Sammasr / Samueltherobinson@gmail.com`. Initial commit `73c804f`.
 - Created and pushed public GitHub repo: <https://github.com/Sammasr/terrascribe>. Tagged `v0.0.1-alpha`. CI build + release workflows triggered.
 - User reply "M0 pass" — milestone closed.
+
+### 2026-05-10 — Session 4 (M3 — Erosion)
+
+- Two more Explore agents on TF/RTF erosion; both confirmed Lague droplet sim, per-region not per-chunk, LRU-cached. RTF uses 100 droplets per chunk × 32×32 chunk tiles ≈ 100k droplets per region; we run 25k droplets over 256×256 (smaller region, comparable density).
+- Wrote `ErosionSimulator` (pure math, bilerp gradient + sediment capacity + deposit/erode). 8 tests green.
+- Wrote `RegionHeightmap` record + `RegionCache` LRU. 6 tests. Caught a test-self bug where the counting-builder used a `Set` (so rebuilding the same key was a no-op) — switched to an `int buildCount`.
+- Rewired `TerraScribeChunkGenerator.heightmapFor` to lazy-init a `RegionCache` from `RandomState`. Per-region erosion seed mixes world seed with region coords via Weyl constants so adjacent regions get different droplet streams.
+- `runServer` smoke test: Done in 1.795 s (+300 ms vs no-erosion baseline). Zero errors.
+- Pending: visual playtest.
+- Next: M4 — rivers + lakes via flow accumulation across the eroded heightmap.
 
 ### 2026-05-10 — Session 3 (M2 — Surface + Biomes)
 

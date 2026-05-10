@@ -5,7 +5,7 @@ import com.mojang.serialization.codecs.RecordCodecBuilder;
 import io.github.sammasr.terrascribe.worldgen.noise.FractalNoise;
 import io.github.sammasr.terrascribe.worldgen.noise.NoiseField;
 import io.github.sammasr.terrascribe.worldgen.noise.SimplexNoise;
-import io.github.sammasr.terrascribe.worldgen.terrain.BasicHeightmapGenerator;
+import io.github.sammasr.terrascribe.worldgen.terrain.ErosionSimulator;
 import io.github.sammasr.terrascribe.worldgen.terrain.Heightmap;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -43,13 +43,29 @@ public final class TerraScribeChunkGenerator extends ChunkGenerator {
     private static final int GEN_DEPTH = 384;
     private static final int SEA_LEVEL = 63;
 
-    // M1 placeholder terrain parameters. Real per-preset config lands in Milestone 5.
+    // Placeholder terrain parameters. Real per-preset config lands in Milestone 5.
     private static final int BASE_HEIGHT = 70;
     private static final float AMPLITUDE = 30f;
     private static final float FREQUENCY = 0.005f;
     private static final int OCTAVES = 4;
     private static final float LACUNARITY = 2f;
     private static final float GAIN = 0.5f;
+
+    // M3 region cache + erosion config.
+    private static final int REGION_SIZE = 256;
+    private static final int MAX_CACHED_REGIONS = 256;
+    private static final ErosionSimulator.Params EROSION_PARAMS = new ErosionSimulator.Params(
+            /* dropletCount         */ 25_000,
+            /* maxStepsPerDroplet   */ 30,
+            /* inertia              */ 0.05f,
+            /* sedimentCapacityFactor */ 4f,
+            /* minSlope             */ 0.01f,
+            /* erosionRate          */ 0.3f,
+            /* depositionRate       */ 0.3f,
+            /* evaporationRate      */ 0.01f,
+            /* initialWater         */ 1f,
+            /* initialSpeed         */ 1f,
+            /* gravity              */ 4f);
 
     private static final BlockState STONE = Blocks.STONE.defaultBlockState();
     private static final BlockState WATER = Blocks.WATER.defaultBlockState();
@@ -62,6 +78,10 @@ public final class TerraScribeChunkGenerator extends ChunkGenerator {
 
     /** Stateless terrain noise — seeded per-call via {@link RandomState}. */
     private final NoiseField terrainNoise;
+
+    /** Lazily built on first chunk fill once we have a {@link RandomState} to derive a seed from. */
+    private volatile RegionCache regionCache;
+    private volatile int worldSeed;
 
     public TerraScribeChunkGenerator(final BiomeSource biomeSource) {
         super(biomeSource);
@@ -241,15 +261,50 @@ public final class TerraScribeChunkGenerator extends ChunkGenerator {
     }
 
     /**
-     * Derives a deterministic per-world seed for our heightmap.
-     *
-     * <p>{@link RandomState} does not expose the level seed directly, so we derive one by
-     * sampling its {@link net.minecraft.world.level.levelgen.PositionalRandomFactory} at a
-     * fixed coordinate. The factory is itself seeded from the world seed, so the result is
-     * stable per-world without us having to capture the seed in a field.
+     * Returns a {@link Heightmap} backed by the region cache. Lazy-initialized on first call,
+     * keyed by a seed derived from {@link RandomState} (which captures the world seed via its
+     * positional random factory).
      */
     private Heightmap heightmapFor(final RandomState random) {
-        final int seed = random.aquiferRandom().at(0, 0, 0).nextInt();
-        return new BasicHeightmapGenerator(this.terrainNoise, seed, BASE_HEIGHT, AMPLITUDE);
+        final RegionCache cache = regionCache(random);
+        return cache::heightAt;
+    }
+
+    private RegionCache regionCache(final RandomState random) {
+        RegionCache cache = this.regionCache;
+        if (cache != null) {
+            return cache;
+        }
+        synchronized (this) {
+            cache = this.regionCache;
+            if (cache != null) {
+                return cache;
+            }
+            this.worldSeed = random.aquiferRandom().at(0, 0, 0).nextInt();
+            cache = new RegionCache(REGION_SIZE, MAX_CACHED_REGIONS, this::buildRegion);
+            this.regionCache = cache;
+            return cache;
+        }
+    }
+
+    private RegionHeightmap buildRegion(final int regionX, final int regionZ) {
+        // 1. Sample the base noise heightmap across the region.
+        final float[] heights = new float[REGION_SIZE * REGION_SIZE];
+        for (int localZ = 0; localZ < REGION_SIZE; localZ++) {
+            for (int localX = 0; localX < REGION_SIZE; localX++) {
+                final int blockX = regionX * REGION_SIZE + localX;
+                final int blockZ = regionZ * REGION_SIZE + localZ;
+                heights[localZ * REGION_SIZE + localX] =
+                        BASE_HEIGHT + AMPLITUDE * this.terrainNoise.sample(blockX, blockZ, this.worldSeed);
+            }
+        }
+        // 2. Apply hydraulic erosion to the region. Per-region seed mixes worldSeed and
+        // the region coords so adjacent regions don't get identical droplet starting points
+        // (which would otherwise leave a visible seam).
+        final long regionSeed = ((long) this.worldSeed * 0x9e3779b97f4a7c15L)
+                ^ (((long) regionX) * 0xbf58476d1ce4e5b9L)
+                ^ (((long) regionZ) * 0x94d049bb133111ebL);
+        ErosionSimulator.simulate(heights, REGION_SIZE, regionSeed, EROSION_PARAMS);
+        return new RegionHeightmap(regionX, regionZ, REGION_SIZE, heights);
     }
 }

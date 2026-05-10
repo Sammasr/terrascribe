@@ -6,6 +6,12 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 ## [Unreleased]
 
+### Added — Milestone 3 (Erosion)
+
+- `ErosionSimulator` (pure math, `worldgen.terrain`) — Lague droplet hydraulic erosion. Configurable inertia, sediment capacity, erosion/deposit rates, gravity, evaporation. 8 JUnit tests.
+- `RegionHeightmap` record + `RegionCache` LRU (pure math, `worldgen.chunk`) — 256×256 region with configurable max-entry cap. 6 JUnit tests covering LRU eviction, build-once semantics, block-coord routing.
+- `TerraScribeChunkGenerator` rewired — heightmap queries now go through `RegionCache`. On region miss, base noise heightmap is generated, hydraulic erosion is applied with 25k droplets at 30 steps, result is cached. Per-region erosion seed mixes world seed + region coords so adjacent regions don't share droplet starting points (avoids visible seams).
+
 ### Fixed
 
 - Within-bucket biome picker switched from per-quart positionHash to low-frequency variant noise (FractalNoise, freq 0.0015). Without this, every 4×4-block area inside a climate bucket re-picked a different biome, producing visible 4-block speckle. Patches are now ~500 blocks across with organic boundaries.
