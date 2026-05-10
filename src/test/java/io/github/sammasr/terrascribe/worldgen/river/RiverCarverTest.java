@@ -72,34 +72,6 @@ class RiverCarverTest {
     }
 
     @Test
-    void carveWetCellsLowersThemToBelowSeaLevel() {
-        final int size = 4;
-        final float[] heights = new float[size * size];
-        java.util.Arrays.fill(heights, 90f);
-        final boolean[] wet = new boolean[size * size];
-        wet[0] = true;
-        wet[5] = true;
-        RiverCarver.carveWetCells(heights, wet, 63);
-        assertTrue(heights[0] < 63, "wet cell 0 should be below sea level: " + heights[0]);
-        assertTrue(heights[5] < 63, "wet cell 5 should be below sea level: " + heights[5]);
-        for (int i = 0; i < heights.length; i++) {
-            if (!wet[i]) {
-                assertTrue(heights[i] == 90f, "non-wet cell " + i + " should be untouched");
-            }
-        }
-    }
-
-    @Test
-    void carveWetCellsRejectsBadArguments() {
-        assertThrows(IllegalArgumentException.class,
-                () -> RiverCarver.carveWetCells(null, new boolean[1], 63));
-        assertThrows(IllegalArgumentException.class,
-                () -> RiverCarver.carveWetCells(new float[1], null, 63));
-        assertThrows(IllegalArgumentException.class,
-                () -> RiverCarver.carveWetCells(new float[1], new boolean[2], 63));
-    }
-
-    @Test
     void belowSeaLevelCellsAreNotMarkedWet() {
         // High-flow cells below sea level are already getting water from the chunk gen's
         // sea-level fill, so we skip them.

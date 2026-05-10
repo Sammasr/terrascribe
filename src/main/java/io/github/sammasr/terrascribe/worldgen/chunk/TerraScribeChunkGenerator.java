@@ -359,18 +359,18 @@ public final class TerraScribeChunkGenerator extends ChunkGenerator {
                 ^ (((long) regionX) * 0xbf58476d1ce4e5b9L)
                 ^ (((long) regionZ) * 0x94d049bb133111ebL);
         ErosionSimulator.simulate(heights, REGION_SIZE, regionSeed, EROSION_PARAMS);
-        // 3. Compute D8 flow field over the eroded heightmap and derive a wet-cells mask
-        // (rivers + lake sinks above sea level). Cells already below sea level are not
-        // marked wet — the chunk gen fills them from sea level naturally. Cells too far
-        // above sea level are skipped too — we don't want mountain-top "rivers."
+        // 3. Compute D8 flow field over the eroded heightmap and derive a centerline mask
+        // (cells with high accumulated flow, above sea level, below the river-elevation cap).
         final FlowField flow = FlowField.compute(heights, REGION_SIZE);
         final int maxRiverElevation = SEA_LEVEL + RiverCarver.DEFAULT_MAX_RIVER_ELEVATION_ABOVE_SEA;
-        final boolean[] wet = RiverCarver.computeWetMask(
+        final boolean[] centerline = RiverCarver.computeWetMask(
                 heights, flow, SEA_LEVEL, RiverCarver.DEFAULT_FLOW_THRESHOLD, maxRiverElevation);
-        // 4. Carve wet cells down to just below sea level so water sits at world water level
-        // instead of perching on the existing terrain surface. This creates river channels and
-        // lake depressions that look like real Minecraft rivers (water at y=sea level).
-        RiverCarver.carveWetCells(heights, wet, SEA_LEVEL);
+        // 4. Carve river channels with sloped banks. Returns a dilated wet mask (~5 blocks
+        // wide) and modifies the heightmap so banks blend smoothly from natural height down
+        // to the river bed at sea level - 1. No more cookie-cutter canyons.
+        final boolean[] wet = RiverCarver.carveChannelsWithBanks(
+                heights, centerline, REGION_SIZE, SEA_LEVEL,
+                RiverCarver.DEFAULT_CHANNEL_RADIUS, RiverCarver.DEFAULT_BANK_RADIUS);
         return new RegionHeightmap(regionX, regionZ, REGION_SIZE, heights, wet);
     }
 }
