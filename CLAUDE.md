@@ -10,22 +10,36 @@ The full specification is canonical: [`docs/SPEC.md`](docs/SPEC.md). When the sp
 
 ## Current milestone
 
-**Milestone 0 — Bootstrap.** Skeleton mod loads in 1.21.1, GitHub repo live, CI green.
+**Milestone 1 — Custom ChunkGenerator.** Selectable "TerraScribe" world type generates a basic noise-driven heightmap, stone-only.
 
-See `docs/SPEC.md` §9 for the full milestone table; §21 for the first-session checklist.
+See `docs/SPEC.md` §9 for the full milestone table.
 
-### Milestone 0 — Definition of Done
+### Milestone 0 — Bootstrap (PASSED 2026-05-10)
 
 - [x] NeoForge MDK 1.21.1 skeleton extracted and re-packaged as `io.github.sammasr.terrascribe`.
 - [x] Mod class `TerraScribe.java` written, emits `[TerraScribe] mod constructor invoked …` on startup.
 - [x] Pinned versions: NeoForge `21.1.228`, ModDevGradle `2.0.141`, Parchment `1.21.1 / 2024.11.17`, Java Temurin `21.0.11`.
 - [x] Reference repos cloned into `references/` (gitignored).
 - [x] `LICENSE` (MIT, crediting TerraForged + ReTerraForged), `README.md`, `CHANGELOG.md`, `CONTRIBUTING.md`, `docs/SPEC.md` mirror.
-- [ ] `./gradlew build` green (in progress — first run downloads MC + NeoForge).
-- [ ] `./gradlew runClient` launches MC 1.21.1, mod appears in mod list, `[TerraScribe]` log line present.
-- [ ] `git init`, `gh repo create terrascribe`, push to GitHub, tag `v0.0.1-alpha`.
-- [ ] CI `build.yml` (already from MDK) plus `release.yml` for tag pushes.
-- [ ] User runs M0 playtest checklist and replies "M0 pass".
+- [x] `./gradlew build` green (3m 46s first run).
+- [x] `./gradlew runClient` launches MC 1.21.1, mod appears in mod list, `[TerraScribe]` log line present in modloading-worker. Zero terrascribe-related errors. World creation + save + shutdown clean.
+- [x] `git init`, `gh repo create terrascribe`, pushed to <https://github.com/Sammasr/terrascribe>, tag `v0.0.1-alpha` pushed.
+- [x] CI `build.yml` + `release.yml` workflows committed and triggering on push/tag.
+- [x] User confirmed "M0 pass" 2026-05-10.
+
+### Milestone 1 — Definition of Done (draft — refine at session start)
+
+- [ ] Custom `BiomeSource` (`TerraScribeBiomeSource`) — minimal at first, a single placeholder biome (e.g. `minecraft:plains`) so the world type is registerable end-to-end.
+- [ ] Custom `ChunkGenerator` (`TerraScribeChunkGenerator extends NoiseBasedChunkGenerator` or direct `ChunkGenerator` subclass — TBD after re-reading TF/RTF references).
+- [ ] `WorldPreset` registered so "TerraScribe" appears in the world-creation type dropdown.
+- [ ] Noise stack: `NoiseField` interface + `SimplexNoise` + `FractalNoise` (pure JVM, no MC API).
+- [ ] `HeightmapGenerator` produces deterministic heightmap from seed (pure math, unit-testable).
+- [ ] Surface is stone-only at this milestone — no biomes-driven surface yet.
+- [ ] JUnit 5 set up; codec roundtrip test for any new registered codec; at least one noise math test.
+- [ ] GameTest: load TerraScribe world without errors.
+- [ ] `docs/PLAYTEST.md` updated with M1 checklist; `docs/ARCHITECTURE.md` first cut covering the noise + terrain + chunk packages.
+- [ ] CHANGELOG entry under `[Unreleased]`.
+- [ ] Commit + push.
 
 ## How to run the game
 
@@ -85,11 +99,15 @@ Pulled from `docs/SPEC.md` §18:
 
 ## Session log
 
-### 2026-05-10 — Session 1 (bootstrap)
+### 2026-05-10 — Session 1 (bootstrap → M0 pass)
 
-- Installed Temurin 21.0.11 via SDKMAN! (manual tarball extraction — SDKMAN's installer exited silently after download; root cause not fully diagnosed but workaround documented).
+- Installed Temurin 21.0.11 via SDKMAN! (manual tarball extraction — SDKMAN's installer exited silently after download; root cause not fully diagnosed but workaround documented above).
 - Pinned NeoForge `21.1.228`, ModDevGradle `2.0.141`, Parchment `2024.11.17`.
 - Cloned MDK `archive/1.21-mdg`, stripped example content, re-packaged to `io.github.sammasr.terrascribe`.
-- Wrote `LICENSE`, `README.md`, `CHANGELOG.md`, `CONTRIBUTING.md`, this file.
+- Wrote `LICENSE`, `README.md`, `CHANGELOG.md`, `CONTRIBUTING.md`, `CLAUDE.md`, `docs/PLAYTEST.md`, `docs/SPEC.md` mirror.
 - Cloned references (`TerraForged` 1.18, `ReTerraForged`) into gitignored `references/`.
-- Next: finish first `./gradlew build`, init git, push to GitHub, tag `v0.0.1-alpha`, post M0 playtest checklist, **stop**.
+- `./gradlew build` green (3m 46s). `runServer` and `runClient` smoke tests both showed the `[TerraScribe]` mod-load line and zero errors.
+- Initialized git repo. Repo-local identity `Sammasr / Samueltherobinson@gmail.com`. Initial commit `73c804f`.
+- Created and pushed public GitHub repo: <https://github.com/Sammasr/terrascribe>. Tagged `v0.0.1-alpha`. CI build + release workflows triggered.
+- User reply "M0 pass" — milestone closed.
+- Next session: start Milestone 1 (custom ChunkGenerator). First step is to read `references/TerraForged/.../ChunkGenerator*` and `references/ReTerraForged/.../*ChunkGenerator*` for orientation, then draft the noise / terrain / chunk packages.
