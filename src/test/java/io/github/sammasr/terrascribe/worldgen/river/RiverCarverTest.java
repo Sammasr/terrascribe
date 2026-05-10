@@ -13,13 +13,15 @@ class RiverCarverTest {
         final float[] heights = new float[64];
         final FlowField flow = FlowField.compute(heights, 8);
         assertThrows(IllegalArgumentException.class,
-                () -> RiverCarver.computeWetMask(null, flow, 63, 10));
+                () -> RiverCarver.computeWetMask(null, flow, 63, 10, 200));
         assertThrows(IllegalArgumentException.class,
-                () -> RiverCarver.computeWetMask(heights, null, 63, 10));
+                () -> RiverCarver.computeWetMask(heights, null, 63, 10, 200));
         assertThrows(IllegalArgumentException.class,
-                () -> RiverCarver.computeWetMask(heights, flow, 63, 0));
+                () -> RiverCarver.computeWetMask(heights, flow, 63, 0, 200));
         assertThrows(IllegalArgumentException.class,
-                () -> RiverCarver.computeWetMask(new float[100], flow, 63, 10));
+                () -> RiverCarver.computeWetMask(new float[100], flow, 63, 10, 200));
+        assertThrows(IllegalArgumentException.class,
+                () -> RiverCarver.computeWetMask(heights, flow, 63, 10, 40));
     }
 
     @Test
@@ -35,7 +37,7 @@ class RiverCarverTest {
             }
         }
         final FlowField flow = FlowField.compute(heights, size);
-        final boolean[] wet = RiverCarver.computeWetMask(heights, flow, 63, /* threshold */ size);
+        final boolean[] wet = RiverCarver.computeWetMask(heights, flow, 63, size, 200);
 
         // Easternmost column flow accumulates the whole row → all should be wet at threshold=size.
         for (int z = 0; z < size; z++) {
@@ -47,6 +49,54 @@ class RiverCarverTest {
             assertFalse(wet[z * size],
                     "west-column cell at z=" + z + " should NOT be wet (flow=1 < threshold)");
         }
+    }
+
+    @Test
+    void cellsAboveMaxElevationAreNotMarkedWet() {
+        // Same ramp, but with the maxElevation clamp set below the high cells. Westernmost
+        // columns (height ~100) exceed the clamp and should be skipped.
+        final int size = 6;
+        final float[] heights = new float[size * size];
+        for (int z = 0; z < size; z++) {
+            for (int x = 0; x < size; x++) {
+                heights[z * size + x] = 100f - x; // x=0 → height 100, x=5 → height 95
+            }
+        }
+        final FlowField flow = FlowField.compute(heights, size);
+        final boolean[] wet = RiverCarver.computeWetMask(heights, flow, 63, size, /* maxElevation */ 96);
+        // x=0 cells are 100 — above clamp — must NOT be wet regardless of flow.
+        for (int z = 0; z < size; z++) {
+            assertFalse(wet[z * size + 0],
+                    "x=0 cell (height=100) above clamp=96 must not be wet, z=" + z);
+        }
+    }
+
+    @Test
+    void carveWetCellsLowersThemToBelowSeaLevel() {
+        final int size = 4;
+        final float[] heights = new float[size * size];
+        java.util.Arrays.fill(heights, 90f);
+        final boolean[] wet = new boolean[size * size];
+        wet[0] = true;
+        wet[5] = true;
+        RiverCarver.carveWetCells(heights, wet, 63);
+        assertTrue(heights[0] < 63, "wet cell 0 should be below sea level: " + heights[0]);
+        assertTrue(heights[5] < 63, "wet cell 5 should be below sea level: " + heights[5]);
+        for (int i = 0; i < heights.length; i++) {
+            if (!wet[i]) {
+                assertTrue(heights[i] == 90f, "non-wet cell " + i + " should be untouched");
+            }
+        }
+    }
+
+    @Test
+    void carveWetCellsRejectsBadArguments() {
+        assertThrows(IllegalArgumentException.class,
+                () -> RiverCarver.carveWetCells(null, new boolean[1], 63));
+        assertThrows(IllegalArgumentException.class,
+                () -> RiverCarver.carveWetCells(new float[1], null, 63));
+        assertThrows(IllegalArgumentException.class,
+                () -> RiverCarver.carveWetCells(new float[1], new boolean[2], 63));
     }
 
     @Test
@@ -64,7 +114,7 @@ class RiverCarverTest {
             heights[i] = 50f - x - z; // top-left high, bottom-right low; all below sea level.
         }
         final FlowField flow = FlowField.compute(heights, size);
-        final boolean[] wet = RiverCarver.computeWetMask(heights, flow, 63, 2);
+        final boolean[] wet = RiverCarver.computeWetMask(heights, flow, 63, 2, 200);
         for (final boolean w : wet) {
             assertFalse(w, "no cell below sea level should be marked wet");
         }
@@ -78,7 +128,7 @@ class RiverCarverTest {
         final float[] heights = new float[size * size];
         java.util.Arrays.fill(heights, 80f);
         final FlowField flow = FlowField.compute(heights, size);
-        final boolean[] wet = RiverCarver.computeWetMask(heights, flow, 63, 2);
+        final boolean[] wet = RiverCarver.computeWetMask(heights, flow, 63, 2, 200);
         for (final boolean w : wet) {
             assertFalse(w);
         }

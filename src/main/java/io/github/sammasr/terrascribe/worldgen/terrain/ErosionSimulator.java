@@ -98,10 +98,16 @@ public final class ErosionSimulator {
                     "heightmap.length=" + heightmap.length + " does not match width*width=" + (width * width));
         }
         final SplittableRandom rng = new SplittableRandom(seed);
-        final int maxIndex = width - 1;
+        // The bilerp at each step reads cell (cx, cz) AND (cx+1, cz+1). For that to stay in
+        // bounds, posX and posZ must satisfy cellX = (int)pos <= width - 2 — i.e., pos must
+        // be strictly less than width - 1. We seed inside this range and break early when a
+        // droplet moves out of it.
+        final float maxPos = width - 1f;
         for (int d = 0; d < params.dropletCount(); d++) {
-            float posX = rng.nextFloat() * maxIndex;
-            float posZ = rng.nextFloat() * maxIndex;
+            // rng.nextFloat() in [0, 1); multiplying by (maxPos - 1) keeps us strictly < maxPos
+            // even with float rounding edge cases.
+            float posX = rng.nextFloat() * (maxPos - 1f);
+            float posZ = rng.nextFloat() * (maxPos - 1f);
             float velX = 0f;
             float velZ = 0f;
             float water = params.initialWater();
@@ -147,7 +153,8 @@ public final class ErosionSimulator {
 
                 final float nextX = posX + velX;
                 final float nextZ = posZ + velZ;
-                if (nextX < 0f || nextX > maxIndex || nextZ < 0f || nextZ > maxIndex) {
+                // Strictly inside [0, width - 1) so the bilerp on the next step stays in bounds.
+                if (nextX < 0f || nextX >= maxPos || nextZ < 0f || nextZ >= maxPos) {
                     // Drop sediment at the boundary and stop.
                     deposit(heightmap, cellX, cellZ, width, offsetX, offsetZ, sediment);
                     break;

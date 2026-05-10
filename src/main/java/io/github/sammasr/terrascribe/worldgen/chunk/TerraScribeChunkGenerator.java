@@ -194,10 +194,7 @@ public final class TerraScribeChunkGenerator extends ChunkGenerator {
                 final int worldX = chunkMinX + localX;
                 final int worldZ = chunkMinZ + localZ;
                 final int surfaceY = cache.heightAt(worldX, worldZ);
-                final boolean wet = cache.isWet(worldX, worldZ);
-                // Wet columns above sea level get a 1-block water "river" at the surface.
-                // Stone bedrock fills below as usual.
-                final int waterTopY = wet && surfaceY >= SEA_LEVEL ? surfaceY + 1 : Math.max(surfaceY, SEA_LEVEL);
+                final int waterTopY = Math.max(surfaceY, SEA_LEVEL);
 
                 for (int y = minY; y <= waterTopY; y++) {
                     final BlockState state;
@@ -258,12 +255,12 @@ public final class TerraScribeChunkGenerator extends ChunkGenerator {
                 }
                 final boolean wet = cache.isWet(worldX, worldZ);
 
-                // For wet (river/lake) columns above sea level we already placed water at
-                // surfaceY+1 in fillFromNoise. The surface block at surfaceY itself should
-                // be the river/lake bed material (gravel by default).
+                // Wet columns (river / lake cells) have been carved down to just below sea
+                // level by RiverCarver, so they're now underwater. Paint gravel on the
+                // (carved) surface as the river/lake bed.
                 final BlockState topBlock;
                 final BlockState subBlock;
-                if (wet && surfaceY >= SEA_LEVEL) {
+                if (wet) {
                     topBlock = Blocks.GRAVEL.defaultBlockState();
                     subBlock = Blocks.GRAVEL.defaultBlockState();
                 } else {
@@ -364,9 +361,16 @@ public final class TerraScribeChunkGenerator extends ChunkGenerator {
         ErosionSimulator.simulate(heights, REGION_SIZE, regionSeed, EROSION_PARAMS);
         // 3. Compute D8 flow field over the eroded heightmap and derive a wet-cells mask
         // (rivers + lake sinks above sea level). Cells already below sea level are not
-        // marked wet — the chunk gen fills them from sea level naturally.
+        // marked wet — the chunk gen fills them from sea level naturally. Cells too far
+        // above sea level are skipped too — we don't want mountain-top "rivers."
         final FlowField flow = FlowField.compute(heights, REGION_SIZE);
-        final boolean[] wet = RiverCarver.computeWetMask(heights, flow, SEA_LEVEL, RiverCarver.DEFAULT_FLOW_THRESHOLD);
+        final int maxRiverElevation = SEA_LEVEL + RiverCarver.DEFAULT_MAX_RIVER_ELEVATION_ABOVE_SEA;
+        final boolean[] wet = RiverCarver.computeWetMask(
+                heights, flow, SEA_LEVEL, RiverCarver.DEFAULT_FLOW_THRESHOLD, maxRiverElevation);
+        // 4. Carve wet cells down to just below sea level so water sits at world water level
+        // instead of perching on the existing terrain surface. This creates river channels and
+        // lake depressions that look like real Minecraft rivers (water at y=sea level).
+        RiverCarver.carveWetCells(heights, wet, SEA_LEVEL);
         return new RegionHeightmap(regionX, regionZ, REGION_SIZE, heights, wet);
     }
 }
