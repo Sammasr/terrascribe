@@ -6,6 +6,10 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 ## [Unreleased]
 
+### Fixed
+
+- Within-bucket biome picker switched from per-quart positionHash to low-frequency variant noise (FractalNoise, freq 0.0015). Without this, every 4×4-block area inside a climate bucket re-picked a different biome, producing visible 4-block speckle. Patches are now ~500 blocks across with organic boundaries.
+
 ### Added — Milestone 2 (Surface + Biomes)
 
 - `Climate(float temperature, float humidity)` record + `ClimateSampler` (pure math, `worldgen.biome.climate`) — two-channel noise plus a `sin(z * f) * s` latitude bias for climate bands. 7 JUnit tests.

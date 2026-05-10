@@ -25,7 +25,7 @@ See `docs/SPEC.md` §9 for the full milestone table.
 - [ ] `docs/PLAYTEST.md` M3 checklist; `docs/PERF.md` first cut with baseline.
 - [ ] CHANGELOG.
 
-### Milestone 2 — Surface + Biomes (PASSED-pending visual verification 2026-05-10)
+### Milestone 2 — Surface + Biomes (PASSED 2026-05-10)
 
 - [x] `ClimateSampler` (pure math, `worldgen.biome.climate`) — `(x, z) → Climate(temperature, humidity)`. Two-channel noise plus a `sin(z * f) * s` latitude bias for climate bands. 7 tests.
 - [x] `BiomeMapper` decision matrix (`worldgen.biome`) — pure math, `Climate → ClimateBucket(Coolness, Wetness)`. Elevation axis deliberately deferred to M3+. 4 tests.
@@ -34,7 +34,7 @@ See `docs/SPEC.md` §9 for the full milestone table.
 - [x] `TerraScribeConfig` — `config/terrascribe-common.toml` with `biomeBlocklist` (full IDs or `namespace:*` wildcards).
 - [x] `SurfaceLayers` biome-ID-based top/sub block mapper + `TerraScribeChunkGenerator.buildSurface` implemented. No vanilla `SurfaceRules` (would require a `NoiseChunk` and switching to `NoiseBasedChunkGenerator`).
 - [x] `runServer` smoke test: 53 overworld biomes discovered across 9 climate buckets, server Done in 1.735 s, zero errors.
-- [ ] User-confirmed visual playtest pass (pending).
+- [x] User-confirmed visual playtest pass — "looks better" after the variant-noise patch-size fix (`ba802e1`).
 - [ ] ~~GameTest~~ — deferred again; design slipping toward M4 when we have rivers worth asserting.
 - [x] `docs/PLAYTEST.md` M2 section appended.
 - [x] `docs/COMPATIBILITY.md` first cut.
@@ -196,7 +196,7 @@ Pulled from `docs/SPEC.md` §18:
 - Added `TerraScribeConfig` (`ModConfigSpec`) with `biomeBlocklist` setting; honored at both static bucketing time and runtime discovery time.
 - Wrote `SurfaceLayers` + implemented `TerraScribeChunkGenerator.buildSurface` — biome-ID-based top + 3 subsurface blocks per column. No vanilla `SurfaceRules`.
 - `runServer` smoke test: "biome discovery: 53 overworld biomes across 9 climate buckets", Done in 1.735 s, zero errors.
-- Pending: visual playtest pass.
+- First visual playtest reported "biomes in 4×4 patches" — per-quart hash picker was the culprit. Replaced with low-frequency `FractalNoise` variant picker (freq 0.0015 → ~500-block patches with organic boundaries) in `ba802e1`. Second playtest: "looks better" — M2 closed.
 - Next: M3 — hydraulic erosion + region cache.
 
 ### 2026-05-10 — Session 2 (M1 — custom ChunkGenerator → M1 pass)
