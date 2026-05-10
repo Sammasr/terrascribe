@@ -10,9 +10,21 @@ The full specification is canonical: [`docs/SPEC.md`](docs/SPEC.md). When the sp
 
 ## Current milestone
 
-**Milestone 1 — Custom ChunkGenerator.** Selectable "TerraScribe" world type generates a basic noise-driven heightmap, stone-only.
+**Milestone 2 — Surface + Biomes.** Climate model → biome assignment, surface rules apply correct blocks, modded biomes auto-discovered.
 
 See `docs/SPEC.md` §9 for the full milestone table.
+
+### Milestone 2 — Definition of Done (draft — refine at session start)
+
+- [ ] `ClimateSampler` — pure-math `(x, z)` → `(temperature, humidity)`. Layered noise + a latitude-bias term so north is colder. Unit-tested.
+- [ ] `BiomeMapper` — pure-math decision matrix `(climate, height, terrainType)` → `ResourceKey<Biome>`. Start with a handful of vanilla overworld biomes (Plains, Desert, Forest, Taiga, Mountains, Beach, Ocean) and a fallback. Unit-tested.
+- [ ] `ModdedBiomeRegistry` — at world creation, query the BIOME registry for everything in `is_overworld`, group by climate signature, inject into `BiomeMapper` decision matrix alongside vanilla. Hook `ServerAboutToStartEvent` (NOT static registries — biomes aren't fully populated until world load).
+- [ ] Config TOML (`config/terrascribe-common.toml`) with a modded-biome blocklist option.
+- [ ] `TerraScribeBiomeSource` rewritten to use `BiomeMapper` + `ClimateSampler` instead of the M1 single-biome placeholder.
+- [ ] `TerraScribeChunkGenerator.buildSurface` implemented — at minimum: grass + dirt cap on Plains/Forest-style, sand on Desert/Beach, stone exposed on Mountains. Use `SurfaceRules.sequence(...)` to build programmatically.
+- [ ] GameTest: at fixed seed + fixed coordinates, assert specific biomes appear; assert top block matches biome.
+- [ ] `docs/PLAYTEST.md` M2 checklist, `docs/COMPATIBILITY.md` first cut (vanilla pass, BoP, Terralith deferred to M8 with config tag-based blocklist hint).
+- [ ] CHANGELOG `[Unreleased]` entries.
 
 ### Milestone 0 — Bootstrap (PASSED 2026-05-10)
 
@@ -27,19 +39,20 @@ See `docs/SPEC.md` §9 for the full milestone table.
 - [x] CI `build.yml` + `release.yml` workflows committed and triggering on push/tag.
 - [x] User confirmed "M0 pass" 2026-05-10.
 
-### Milestone 1 — Definition of Done
+### Milestone 1 — Custom ChunkGenerator (PASSED 2026-05-10)
 
-- [ ] Noise stack: `NoiseField` interface + `SimplexNoise` (2D, vendored) + `FractalNoise` (octave-summed fBm). Pure JVM, zero MC imports. JUnit tests: determinism, value range, seed independence.
-- [ ] `Heightmap` (functional interface `int heightAt(int x, int z)`) + `BasicHeightmapGenerator` (noise → height). Pure math, unit-testable.
-- [ ] `TerraScribeBiomeSource extends BiomeSource` — placeholder, returns `minecraft:plains` for all (x, y, z). Codec via `RecordCodecBuilder`.
-- [ ] `TerraScribeChunkGenerator extends ChunkGenerator` (direct, not `NoiseBasedChunkGenerator` — see design note below). Fills stone below heightmap, water at sea level 63 when height < 63, air above. Codec via `RecordCodecBuilder`.
-- [ ] DeferredRegisters wired for `BIOME_SOURCE` and `CHUNK_GENERATOR` codec registries. Both registered as `terrascribe:terrascribe`.
-- [ ] `data/terrascribe/worldgen/world_preset/terrascribe.json` so "TerraScribe" appears in create-world dropdown. Lang entry `generator.terrascribe.terrascribe` → "TerraScribe".
-- [ ] JUnit 5 wired up in `build.gradle`; codec roundtrip tests for chunk gen + biome source; noise math tests.
-- [ ] GameTest: load TerraScribe world without errors (deferred — may slip to M2 if it bloats).
-- [ ] `docs/PLAYTEST.md` appended with M1 checklist; `docs/ARCHITECTURE.md` first cut.
-- [ ] CHANGELOG `[Unreleased]` entries for each substantive piece.
-- [ ] Commit + push. `./gradlew runClient` shows TerraScribe world type, creates a world, terrain rolls, stone below surface, water at sea level — no errors in log.
+- [x] Noise stack: `NoiseField` interface + `SimplexNoise` (2D, vendored) + `FractalNoise` (octave-summed fBm). Pure JVM, zero MC imports. 9 JUnit tests green.
+- [x] `Heightmap` (functional interface `int heightAt(int x, int z)`) + `BasicHeightmapGenerator` (noise → height). Pure math, 7 JUnit tests green.
+- [x] `TerraScribeBiomeSource extends BiomeSource` — placeholder, returns `minecraft:plains` for all (x, y, z). Codec via `RecordCodecBuilder`.
+- [x] `TerraScribeChunkGenerator extends ChunkGenerator`. Fills stone below heightmap, water at sea level 63 when height < 63, air above, bedrock at y=-64.
+- [x] DeferredRegisters wired for `BIOME_SOURCE` and `CHUNK_GENERATOR` codec registries. Both registered as `terrascribe:terrascribe`.
+- [x] `data/terrascribe/worldgen/world_preset/terrascribe.json` + tag entry adding to `minecraft:normal` so "TerraScribe" appears in create-world dropdown. Lang entry `generator.terrascribe.terrascribe` → "TerraScribe".
+- [x] JUnit 5 wired up in `build.gradle` (5.11.0).
+- [ ] ~~GameTest: load TerraScribe world without errors~~ — deferred to M2 per design note in CLAUDE.md M1 decisions.
+- [x] `docs/PLAYTEST.md` appended with M1 checklist.
+- [ ] `docs/ARCHITECTURE.md` first cut — also deferred to M2 (only 4 packages so far; not worth a doc yet).
+- [x] CHANGELOG `[Unreleased]` entries for each substantive piece.
+- [x] Commit + push (`78a363d`). `./gradlew runServer` headless smoke test generated chunks in 892 ms with zero errors. `./gradlew runClient` end-to-end playtest verified visually by user.
 
 ## Reference-study notes for Milestone 1
 
@@ -135,4 +148,14 @@ Pulled from `docs/SPEC.md` §18:
 - Initialized git repo. Repo-local identity `Sammasr / Samueltherobinson@gmail.com`. Initial commit `73c804f`.
 - Created and pushed public GitHub repo: <https://github.com/Sammasr/terrascribe>. Tagged `v0.0.1-alpha`. CI build + release workflows triggered.
 - User reply "M0 pass" — milestone closed.
-- Next session: start Milestone 1 (custom ChunkGenerator). First step is to read `references/TerraForged/.../ChunkGenerator*` and `references/ReTerraForged/.../*ChunkGenerator*` for orientation, then draft the noise / terrain / chunk packages.
+
+### 2026-05-10 — Session 2 (M1 — custom ChunkGenerator → M1 pass)
+
+- Two Explore agents digested TerraForged and ReTerraForged. Surprise: both references skip subclassing `ChunkGenerator`/`BiomeSource` and use mixin-based hooks plus density-function injection instead. Our spec's "real subclasses + WorldPreset registration" approach is the cleaner modern path; ReTerraForged's senior-engineer assessment agrees.
+- Wrote pure-math noise stack (`NoiseField`, `SimplexNoise`, `FractalNoise`) — 9 JUnit tests green. Wired JUnit 5 (5.11.0) into `build.gradle`; had to add `mavenCentral()` and reorder repositories ahead of the neoforged maven (which served 502s for non-MC artifacts).
+- Wrote `Heightmap` interface + `BasicHeightmapGenerator` — 7 JUnit tests green.
+- Wrote `TerraScribeBiomeSource` (placeholder plains), `TerraScribeChunkGenerator` (direct `ChunkGenerator` subclass, stone fill below heightmap, water at sea level, bedrock at y=-64), `ModWorldgen` registry holder. Compile required reading actual NeoForge `ChunkGenerator.java` source from the gradle cache; `RandomState` doesn't expose the level seed so derived a stable per-world int via `aquiferRandom().at(0,0,0).nextInt()`.
+- Wrote `data/terrascribe/worldgen/world_preset/terrascribe.json` (custom overworld, vanilla nether/end) + tag merge into `minecraft:normal` to surface in dropdown + lang entry.
+- `runServer` smoke test with `level-type=terrascribe:terrascribe` generated spawn-area chunks in 892 ms, zero errors. Killed an M0 orphan process holding port 25565.
+- Commit `78a363d` pushed. User confirmed M1 playtest pass.
+- Next session: start Milestone 2 (climate sampler + biome mapper + modded biome discovery + surface rules). Begin by re-reading TerraForged climate/biome assignment in references/.
