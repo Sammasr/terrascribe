@@ -10,22 +10,38 @@ The full specification is canonical: [`docs/SPEC.md`](docs/SPEC.md). When the sp
 
 ## Current milestone
 
-**Milestone 4 — Rivers + Lakes.** Flow-based rivers carve through terrain; lakes sit at sinks.
+**Milestone 5 — Preset System.** Five hand-tuned starter presets selectable on world creation, plus a user-preset save/load path.
 
 See `docs/SPEC.md` §9 for the full milestone table.
 
-### Milestone 4 — Definition of Done (draft — refine at session start)
+### Milestone 5 — Definition of Done (draft — refine at session start)
 
-- [ ] `FlowField` (pure math) — downhill gradient accumulation across an eroded heightmap; output is per-cell "flow received from upstream".
-- [ ] `RiverCarver` (pure math) — walks the flow field, carves a channel along high-flow paths, gradient-shape based on accumulated flow.
-- [ ] `LakeFinder` (pure math) — locates closed depressions (sinks) where flow accumulates with no outlet → place water blocks.
-- [ ] Integrate into `RegionCache` builder: after erosion, compute flow, carve rivers, mark lake cells.
-- [ ] River cells produce water blocks in `fillFromNoise`.
-- [ ] Lake cells: water-filled depressions, surface blocks below water swap to sand/gravel.
-- [ ] Cross-region river continuity: rivers shouldn't snap discontinuously at region boundaries. Achieved either via region padding (preferred) or post-pass smoothing along seams.
-- [ ] Unit tests: flow accumulation conserved, river paths reach low ground / map edge, lake cells form closed pools.
-- [ ] `docs/PLAYTEST.md` M4 checklist.
-- [ ] CHANGELOG.
+- [ ] `Preset` record + codec (`worldgen.preset.Preset`) — all currently-hardcoded knobs become per-preset fields: `BASE_HEIGHT`, `AMPLITUDE`, `FREQUENCY`, erosion `Params`, river `flowThreshold`, climate `latitudeFrequency`/`latitudeStrength`, sea level.
+- [ ] `PresetSettings` sub-records: `WorldSettings`, `MountainSettings`, `ErosionSettings`, `RiverSettings`, `ClimateSettings`. Codecs for all.
+- [ ] `BuiltInPresets` — five starters: `default`, `mountains`, `continents`, `islands`, `plateau`. Each has hand-tuned values so the difference is clearly visible.
+- [ ] `PresetManager` — loads user presets from `<gameDir>/config/terrascribe/presets/`.
+- [ ] World-creation hook: TerraScribe world type exposes a preset picker (or the preset is encoded in the world preset JSON via codec field).
+- [ ] `TerraScribeChunkGenerator` / `BiomeSource` rewired to read params from a `Preset` instead of hardcoded constants.
+- [ ] Preset `formatVersion` field + migration step on load.
+- [ ] Codec roundtrip tests for every codec.
+- [ ] `docs/PRESET_FORMAT.md` first cut.
+- [ ] `docs/PLAYTEST.md` M5 checklist; CHANGELOG.
+
+### Milestone 4 — Rivers + Lakes (PASSED-pending visual verification 2026-05-10)
+
+- [x] `FlowField` — D8 + topological flow accumulation. 5 tests.
+- [x] `RiverCarver` — wet-mask threshold over `FlowField`. Lakes covered by the same threshold mechanism (sinks with high accumulated flow become wet). 4 tests.
+- [x] `RegionHeightmap` extended with `boolean[] wet`; `RegionCache.isWet`.
+- [x] `TerraScribeChunkGenerator.buildRegion` chains erosion → FlowField → wet mask. `fillFromNoise` places water for wet-above-sea columns. `buildSurface` paints gravel on river beds.
+- [x] `runServer` smoke test Done in 2.274 s (+480 ms vs M3 baseline). Zero errors.
+- [ ] Visual playtest pass — pending.
+- [x] CHANGELOG and PLAYTEST entries.
+
+**Deviations from spec §8 / §9 for M4:**
+
+- No separate `LakeFinder` class. Lakes are detected implicitly: `FlowField` produces `NO_DOWNHILL` for sink cells, which still accumulate upstream flow, which lifts them above `RiverCarver`'s threshold — they become wet. Functionally equivalent for our region-bounded heightmap.
+- No cross-region river continuity yet. Rivers compute per-region; expect "snap" discontinuities at 256-block region boundaries. Region padding lands in M5 / M6 polish.
+- No procedural meandering. Rivers follow D8 steepest descent (slightly axis-biased look). RTF's `RiverWarp` noise-offset approach is worth stealing later.
 
 ### Milestone 3 — Erosion (PASSED 2026-05-10)
 
@@ -211,7 +227,12 @@ Pulled from `docs/SPEC.md` §18:
 
 ### 2026-05-10 — Session 5 (M4 — Rivers + Lakes)
 
-- TBD.
+- Two more Explore agents on river code. Surprise: ReTerraForged DOESN'T use flow accumulation — they use hand-placed procedural river networks (hierarchical forks, `RiverWarp` Simplex meanders, random lake placement at branch endpoints). Our spec wants flow-based since we already have erosion data; both agents recommended going with the spec.
+- Wrote `FlowField` (D8 + topological flow accumulation), `RiverCarver` (threshold over flow → wet mask). 9 new JUnit tests, all green. Skipped a separate `LakeFinder` — sinks with high accumulated flow get picked up by the same threshold, so functionality is subsumed.
+- Extended `RegionHeightmap` with `boolean[] wet`; updated `RegionCache.isWet`. Chained erosion → FlowField → RiverCarver in `buildRegion`. `fillFromNoise` and `buildSurface` updated to place water + gravel on wet columns above sea level.
+- `runServer` smoke test: Done in 2.274 s (+480 ms vs M3 baseline). Zero errors.
+- Pending: visual playtest.
+- Next: M5 — preset system.
 
 ### 2026-05-10 — Session 4 (M3 — Erosion, → passed)
 

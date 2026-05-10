@@ -22,13 +22,13 @@ class RegionCacheTest {
             for (int i = 0; i < heights.length; i++) {
                 heights[i] = (float) (regionX * 1000 + regionZ);
             }
-            return new RegionHeightmap(regionX, regionZ, this.size, heights);
+            return new RegionHeightmap(regionX, regionZ, this.size, heights, new boolean[this.size * this.size]);
         }
     }
 
     @Test
     void rejectsBadArguments() {
-        final RegionCache.Builder dummy = (x, z) -> new RegionHeightmap(x, z, 4, new float[16]);
+        final RegionCache.Builder dummy = (x, z) -> new RegionHeightmap(x, z, 4, new float[16], new boolean[16]);
         assertThrows(IllegalArgumentException.class, () -> new RegionCache(0, 8, dummy));
         assertThrows(IllegalArgumentException.class, () -> new RegionCache(8, 0, dummy));
         assertThrows(IllegalArgumentException.class, () -> new RegionCache(8, 8, null));
@@ -97,7 +97,7 @@ class RegionCacheTest {
 
     @Test
     void regionHeightmapBoundsChecks() {
-        final RegionHeightmap r = new RegionHeightmap(5, 5, 4, new float[16]);
+        final RegionHeightmap r = new RegionHeightmap(5, 5, 4, new float[16], new boolean[16]);
         // Block range for region (5,5) at size 4: blocks [20,24) × [20,24).
         assertTrue(r.at(20, 20) == 0f);
         assertTrue(r.at(23, 23) == 0f);

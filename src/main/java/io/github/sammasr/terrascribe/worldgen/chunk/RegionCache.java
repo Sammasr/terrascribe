@@ -81,6 +81,16 @@ public final class RegionCache {
         return Math.round(regionAt(regionX, regionZ).at(blockX, blockZ));
     }
 
+    /**
+     * Returns {@code true} if the column at the given block coordinate is a river or lake
+     * cell (water at surface). Builds and caches the containing region on miss.
+     */
+    public boolean isWet(final int blockX, final int blockZ) {
+        final int regionX = Math.floorDiv(blockX, this.regionSize);
+        final int regionZ = Math.floorDiv(blockZ, this.regionSize);
+        return regionAt(regionX, regionZ).isWet(blockX, blockZ);
+    }
+
     public synchronized int size() {
         return this.cache.size();
     }

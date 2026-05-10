@@ -121,3 +121,35 @@ Goal: hydraulic erosion is applied to each 256×256 region of heightmap before c
 ### How to report
 
 Reply **"M3 pass"** if 1-6 check out. If terrain looks the same as M2 (i.e., erosion isn't visible), say so — that probably means our droplet count is too low for this region size, and I'll bump it. If you see hitching during exploration, mention how bad it is.
+
+---
+
+## Milestone 4 — Rivers + Lakes
+
+Goal: flow-based rivers carve through the eroded terrain; lake pools sit in closed depressions. Both are pure-math derivations from the same `FlowField`.
+
+### What Claude has already auto-verified
+
+- All 50 JUnit tests green (5 new for `FlowField`, 4 new for `RiverCarver`).
+- `./gradlew runServer` Done in 2.274 s (+480 ms vs M3 baseline) — that's the flow-accumulation pass added to each region's first generation. Zero errors. Discovery still logs "44 land biomes across 9 climate buckets, 9 ocean biomes".
+
+### What you visually verify
+
+| # | Step | Expected | Pass? |
+|---|---|---|---|
+| 1 | Create a fresh TerraScribe world. | World loads normally, no crashes. | |
+| 2 | Walk / fly over the terrain. Look for **dark winding lines** on the surface above sea level. | Rivers visible as gravel-bedded channels with water in them, threading down hills toward the sea. | |
+| 3 | Follow a river upstream. | River starts in higher ground (mountain slope) and runs continuously downhill. (May "snap" or end abruptly at 256-block region boundaries — see backlog.) | |
+| 4 | Find a closed basin / depression. | A lake (water pool above sea level) sits at the bottom — pure black water with gravel banks. | |
+| 5 | Cross sea-level terrain. | Oceans / coastlines still look right. Rivers should reach the ocean. | |
+| 6 | Exit and close cleanly. | No errors in terminal. | |
+
+### Known limitations (will hit during play, expected)
+
+- **Region-boundary discontinuity**: rivers compute per 256-block region, so a river that runs out one side of a region doesn't continue on the next region's side. Expect to see rivers "snap off" or restart at boundaries. Fix planned: region padding / ghost cells.
+- **Coarse threshold**: thresh is 80 upstream cells. May produce too many or too few rivers; tunable per-preset at M5.
+- **No proper lake outlet logic**: pools are bigger / smaller than they "should" be based on terrain. Acceptable for M4.
+
+### How to report
+
+Reply **"M4 pass"** if 1-6 check out. If you don't see any rivers, that probably means the threshold is too high — say so and I'll lower it. Note the worst region-boundary discontinuity you see (e.g., "rivers snap every ~few hundred blocks").

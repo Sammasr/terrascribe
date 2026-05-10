@@ -6,6 +6,14 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 ## [Unreleased]
 
+### Added — Milestone 4 (Rivers + Lakes)
+
+- `FlowField` (pure math, `worldgen.river`) — D8 steepest-descent + flow accumulation over a square heightmap. Topological cell ordering by height descending. 5 JUnit tests covering determinism, flat/ramp/peak cases, total-rain conservation across sinks.
+- `RiverCarver` (pure math, `worldgen.river`) — derives a per-cell "wet" boolean mask from a `FlowField` + heightmap. Cells with accumulated flow above threshold AND above sea level become wet. 4 JUnit tests.
+- `RegionHeightmap` extended with a `boolean[] wet` field; `RegionCache.isWet(blockX, blockZ)` exposes it.
+- `TerraScribeChunkGenerator.buildRegion` now runs erosion → flow accumulation → river/lake mask, all in one pass on first region access.
+- `fillFromNoise` places water blocks 1 above the surface for wet columns above sea level; `buildSurface` paints gravel on river/lake beds instead of biome-specific surface blocks.
+
 ### Added — Milestone 3 (Erosion)
 
 - `ErosionSimulator` (pure math, `worldgen.terrain`) — Lague droplet hydraulic erosion. Configurable inertia, sediment capacity, erosion/deposit rates, gravity, evaporation. 8 JUnit tests.

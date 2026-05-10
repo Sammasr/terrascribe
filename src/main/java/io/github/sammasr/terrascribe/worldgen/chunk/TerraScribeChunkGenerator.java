@@ -5,6 +5,8 @@ import com.mojang.serialization.codecs.RecordCodecBuilder;
 import io.github.sammasr.terrascribe.worldgen.noise.FractalNoise;
 import io.github.sammasr.terrascribe.worldgen.noise.NoiseField;
 import io.github.sammasr.terrascribe.worldgen.noise.SimplexNoise;
+import io.github.sammasr.terrascribe.worldgen.river.FlowField;
+import io.github.sammasr.terrascribe.worldgen.river.RiverCarver;
 import io.github.sammasr.terrascribe.worldgen.terrain.ErosionSimulator;
 import io.github.sammasr.terrascribe.worldgen.terrain.Heightmap;
 import java.util.List;
@@ -178,7 +180,7 @@ public final class TerraScribeChunkGenerator extends ChunkGenerator {
         final int chunkMinX = chunk.getPos().getMinBlockX();
         final int chunkMinZ = chunk.getPos().getMinBlockZ();
         final int minY = chunk.getMinBuildHeight();
-        final Heightmap heightmap = heightmapFor(random);
+        final RegionCache cache = regionCache(random);
 
         final net.minecraft.world.level.levelgen.Heightmap oceanFloor =
                 chunk.getOrCreateHeightmapUnprimed(net.minecraft.world.level.levelgen.Heightmap.Types.OCEAN_FLOOR_WG);
@@ -191,10 +193,13 @@ public final class TerraScribeChunkGenerator extends ChunkGenerator {
             for (int localZ = 0; localZ < 16; localZ++) {
                 final int worldX = chunkMinX + localX;
                 final int worldZ = chunkMinZ + localZ;
-                final int surfaceY = heightmap.heightAt(worldX, worldZ);
-                final int topFilledY = Math.max(surfaceY, SEA_LEVEL);
+                final int surfaceY = cache.heightAt(worldX, worldZ);
+                final boolean wet = cache.isWet(worldX, worldZ);
+                // Wet columns above sea level get a 1-block water "river" at the surface.
+                // Stone bedrock fills below as usual.
+                final int waterTopY = wet && surfaceY >= SEA_LEVEL ? surfaceY + 1 : Math.max(surfaceY, SEA_LEVEL);
 
-                for (int y = minY; y <= topFilledY; y++) {
+                for (int y = minY; y <= waterTopY; y++) {
                     final BlockState state;
                     if (y == minY) {
                         state = BEDROCK;
@@ -208,7 +213,7 @@ public final class TerraScribeChunkGenerator extends ChunkGenerator {
                 }
 
                 oceanFloor.update(localX, surfaceY, localZ, STONE);
-                worldSurface.update(localX, topFilledY, localZ, surfaceY >= SEA_LEVEL ? STONE : WATER);
+                worldSurface.update(localX, waterTopY, localZ, waterTopY > surfaceY ? WATER : STONE);
             }
         }
         return chunk;
@@ -240,32 +245,45 @@ public final class TerraScribeChunkGenerator extends ChunkGenerator {
         final int chunkMinX = chunk.getPos().getMinBlockX();
         final int chunkMinZ = chunk.getPos().getMinBlockZ();
         final int minY = chunk.getMinBuildHeight();
-        final Heightmap heightmap = heightmapFor(random);
+        final RegionCache cache = regionCache(random);
         final BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
 
         for (int localX = 0; localX < 16; localX++) {
             for (int localZ = 0; localZ < 16; localZ++) {
                 final int worldX = chunkMinX + localX;
                 final int worldZ = chunkMinZ + localZ;
-                final int surfaceY = heightmap.heightAt(worldX, worldZ);
+                final int surfaceY = cache.heightAt(worldX, worldZ);
                 if (surfaceY < minY) {
                     continue;
                 }
+                final boolean wet = cache.isWet(worldX, worldZ);
 
-                final int biomeQX = net.minecraft.core.QuartPos.fromBlock(worldX);
-                final int biomeQY = net.minecraft.core.QuartPos.fromBlock(Math.max(surfaceY, SEA_LEVEL));
-                final int biomeQZ = net.minecraft.core.QuartPos.fromBlock(worldZ);
-                final SurfaceLayers.Layer layer = SurfaceLayers.forBiome(chunk.getNoiseBiome(biomeQX, biomeQY, biomeQZ));
+                // For wet (river/lake) columns above sea level we already placed water at
+                // surfaceY+1 in fillFromNoise. The surface block at surfaceY itself should
+                // be the river/lake bed material (gravel by default).
+                final BlockState topBlock;
+                final BlockState subBlock;
+                if (wet && surfaceY >= SEA_LEVEL) {
+                    topBlock = Blocks.GRAVEL.defaultBlockState();
+                    subBlock = Blocks.GRAVEL.defaultBlockState();
+                } else {
+                    final int biomeQX = net.minecraft.core.QuartPos.fromBlock(worldX);
+                    final int biomeQY = net.minecraft.core.QuartPos.fromBlock(Math.max(surfaceY, SEA_LEVEL));
+                    final int biomeQZ = net.minecraft.core.QuartPos.fromBlock(worldZ);
+                    final SurfaceLayers.Layer layer = SurfaceLayers.forBiome(chunk.getNoiseBiome(biomeQX, biomeQY, biomeQZ));
+                    topBlock = layer.top();
+                    subBlock = layer.subsurface();
+                }
 
                 pos.set(worldX, surfaceY, worldZ);
-                chunk.setBlockState(pos, layer.top(), false);
+                chunk.setBlockState(pos, topBlock, false);
                 for (int dy = 1; dy <= 3; dy++) {
                     final int y = surfaceY - dy;
                     if (y <= minY) {
                         break;
                     }
                     pos.set(worldX, y, worldZ);
-                    chunk.setBlockState(pos, layer.subsurface(), false);
+                    chunk.setBlockState(pos, subBlock, false);
                 }
             }
         }
@@ -285,6 +303,10 @@ public final class TerraScribeChunkGenerator extends ChunkGenerator {
      * Returns a {@link Heightmap} backed by the region cache. Lazy-initialized on first call,
      * keyed by a seed derived from {@link RandomState} (which captures the world seed via its
      * positional random factory).
+     *
+     * <p>Used by {@link #getBaseHeight} and {@link #getBaseColumn} which need a height for
+     * positions outside of fillFromNoise. {@code fillChunk} talks to {@link RegionCache}
+     * directly to get the wet mask too.
      */
     private Heightmap heightmapFor(final RandomState random) {
         final RegionCache cache = regionCache(random);
@@ -340,6 +362,11 @@ public final class TerraScribeChunkGenerator extends ChunkGenerator {
                 ^ (((long) regionX) * 0xbf58476d1ce4e5b9L)
                 ^ (((long) regionZ) * 0x94d049bb133111ebL);
         ErosionSimulator.simulate(heights, REGION_SIZE, regionSeed, EROSION_PARAMS);
-        return new RegionHeightmap(regionX, regionZ, REGION_SIZE, heights);
+        // 3. Compute D8 flow field over the eroded heightmap and derive a wet-cells mask
+        // (rivers + lake sinks above sea level). Cells already below sea level are not
+        // marked wet — the chunk gen fills them from sea level naturally.
+        final FlowField flow = FlowField.compute(heights, REGION_SIZE);
+        final boolean[] wet = RiverCarver.computeWetMask(heights, flow, SEA_LEVEL, RiverCarver.DEFAULT_FLOW_THRESHOLD);
+        return new RegionHeightmap(regionX, regionZ, REGION_SIZE, heights, wet);
     }
 }
