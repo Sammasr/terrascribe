@@ -57,3 +57,35 @@ Goal: "TerraScribe" appears as a selectable world type; selecting it produces a 
 ### How to report
 
 Reply **"M1 pass"** if all six pass and I'll start Milestone 2 (surface rules + climate-driven biome assignment with modded-biome discovery) in the next session. If anything looks off, screenshot or describe the terrain — for terrain quality, a quick sentence is enough ("looks like flat boring rolling hills" vs "everything is at exactly y=70" vs "checkerboard pattern").
+
+---
+
+## Milestone 2 — Surface + Biomes
+
+Goal: TerraScribe worlds now have varied biomes with correct surface blocks (grass on plains, sand on desert, snow on cold, gravel on ocean floor) and modded overworld biomes are auto-included.
+
+### What Claude has already auto-verified
+
+- All unit tests green (27 tests covering noise, heightmap, climate sampler, biome mapper).
+- `./gradlew runServer` with `level-type=terrascribe:terrascribe` started in 1.735 s. The biome-discovery listener fired at server-start and logged: *"biome discovery: 53 overworld biomes across 9 climate buckets (0 blocked by config)"*. Spawn-area chunks generated cleanly, zero ERROR or FATAL lines.
+
+### What you visually verify
+
+| # | Step | Expected | Pass? |
+|---|---|---|---|
+| 1 | `./gradlew runClient` (Claude usually launches this). Create a new world with the **TerraScribe** world type as before. | World loads. | |
+| 2 | Open F3 to show the biome under your feet. Walk in one direction for ~500 blocks. | You should see the biome name change at least 2-3 times. The biome should match what you see on the ground (e.g., "minecraft:desert" → sand around you, "minecraft:plains" → grass). | |
+| 3 | Dig down a few blocks below grass-topped terrain. | You hit dirt (3 blocks), then stone. | |
+| 4 | Walk into a desert biome (or use `/locate biome minecraft:desert` to teleport). | Surface is sand; digging shows sand for a few blocks. | |
+| 5 | Find a snowy biome (e.g., `/locate biome minecraft:snowy_plains`). | Surface is snow blocks (not snow layer — actual snow block). | |
+| 6 | Find an ocean. | The floor of the ocean (below the water) is gravel. | |
+| 7 | Pay attention as you travel in the +Z and -Z directions for thousands of blocks. | Climate bands roughly perpendicular to Z — you should notice it gets either colder or hotter as you travel north/south, with bands of warmer-colder-warmer due to the sine-based latitude term. (Approximate band period: ~63,000 blocks.) | |
+| 8 | Exit to title and close the game. | Clean shutdown, no terrascribe-related ERROR lines. | |
+
+### Modded biomes (optional, requires a biome mod jar)
+
+If you have a biome mod (BoP, Terralith, OTBYG), drop the jar into `run/mods/` and relaunch the dev client. Any biome that self-tags `minecraft:is_overworld` will be automatically picked up by the discovery listener. The log will show a higher count than the vanilla baseline of 53. This compat work is auto-verified by the discovery mechanism — no extra checklist item required.
+
+### How to report
+
+Reply **"M2 pass"** if 1-8 all check out. If any biome looks wrong, name it and describe (e.g., "desert had grass on top" or "snowy plains had no snow"). For modded biomes, note any mod you tried + whether it integrated.

@@ -192,7 +192,42 @@ public final class TerraScribeChunkGenerator extends ChunkGenerator {
             final StructureManager structureManager,
             final RandomState random,
             final ChunkAccess chunk) {
-        // M1: everything is stone — no grass/dirt/sand layering yet. Surface rules land at M2.
+        // M2: read the biome at each column and paint a top + a couple subsurface blocks.
+        // We deliberately don't use vanilla SurfaceRules / SurfaceSystem because we don't
+        // extend NoiseBasedChunkGenerator and therefore don't have a NoiseChunk to feed it.
+        // See SurfaceLayers for the biome → top/sub block mapping.
+        final int chunkMinX = chunk.getPos().getMinBlockX();
+        final int chunkMinZ = chunk.getPos().getMinBlockZ();
+        final int minY = chunk.getMinBuildHeight();
+        final Heightmap heightmap = heightmapFor(random);
+        final BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+
+        for (int localX = 0; localX < 16; localX++) {
+            for (int localZ = 0; localZ < 16; localZ++) {
+                final int worldX = chunkMinX + localX;
+                final int worldZ = chunkMinZ + localZ;
+                final int surfaceY = heightmap.heightAt(worldX, worldZ);
+                if (surfaceY < minY) {
+                    continue;
+                }
+
+                final int biomeQX = net.minecraft.core.QuartPos.fromBlock(worldX);
+                final int biomeQY = net.minecraft.core.QuartPos.fromBlock(Math.max(surfaceY, SEA_LEVEL));
+                final int biomeQZ = net.minecraft.core.QuartPos.fromBlock(worldZ);
+                final SurfaceLayers.Layer layer = SurfaceLayers.forBiome(chunk.getNoiseBiome(biomeQX, biomeQY, biomeQZ));
+
+                pos.set(worldX, surfaceY, worldZ);
+                chunk.setBlockState(pos, layer.top(), false);
+                for (int dy = 1; dy <= 3; dy++) {
+                    final int y = surfaceY - dy;
+                    if (y <= minY) {
+                        break;
+                    }
+                    pos.set(worldX, y, worldZ);
+                    chunk.setBlockState(pos, layer.subsurface(), false);
+                }
+            }
+        }
     }
 
     @Override

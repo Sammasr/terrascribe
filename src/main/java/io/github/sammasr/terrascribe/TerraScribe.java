@@ -2,9 +2,12 @@ package io.github.sammasr.terrascribe;
 
 import com.mojang.logging.LogUtils;
 import io.github.sammasr.terrascribe.registry.ModWorldgen;
+import io.github.sammasr.terrascribe.worldgen.biome.ModdedBiomeRegistry;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
+import net.neoforged.fml.config.ModConfig;
+import net.neoforged.neoforge.common.NeoForge;
 import org.slf4j.Logger;
 
 /**
@@ -24,6 +27,8 @@ public final class TerraScribe {
 
     public TerraScribe(final IEventBus modEventBus, final ModContainer modContainer) {
         ModWorldgen.register(modEventBus);
-        LOGGER.info("[TerraScribe] mod constructor invoked — chunk generator + biome source codecs registered");
+        modContainer.registerConfig(ModConfig.Type.COMMON, TerraScribeConfig.SPEC);
+        NeoForge.EVENT_BUS.addListener(ModdedBiomeRegistry::onServerAboutToStart);
+        LOGGER.info("[TerraScribe] mod constructor invoked — chunk generator + biome source codecs registered, config registered, biome discovery listener attached");
     }
 }

@@ -6,6 +6,17 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 ## [Unreleased]
 
+### Added — Milestone 2 (Surface + Biomes)
+
+- `Climate(float temperature, float humidity)` record + `ClimateSampler` (pure math, `worldgen.biome.climate`) — two-channel noise plus a `sin(z * f) * s` latitude bias for climate bands. 7 JUnit tests.
+- `ClimateBucket(Coolness, Wetness)` record + `BiomeMapper` decision matrix (pure math, `worldgen.biome`) — climate → discrete bucket. 4 JUnit tests.
+- `TerraScribeBiomeSource` rewritten — codec field is now a `HolderSet<Biome>` (explicit list of vanilla overworld biomes); buckets biomes by their vanilla `temperature` + `downfall`; picks deterministically per quart-coord.
+- `ModdedBiomeRegistry` — listens to `ServerAboutToStartEvent`, scans the biome registry for everything tagged `minecraft:is_overworld`, buckets it by the same rules, exposes as a side-channel pool. World preset codec deserialization sees tags as empty (Mojang's tag/preset load order), so this side-channel is the only way to autopick up modded biomes — and it does, automatically, no config required for well-behaved mods.
+- `TerraScribeConfig` — `config/terrascribe-common.toml` with `biomeBlocklist` setting (full IDs or `namespace:*` wildcards).
+- `SurfaceLayers` — biome-ID-based top/subsurface block mapper (grass/dirt by default; sand on desert/beach, red sand on badlands, gravel on ocean, snow on cold biomes, stone on stony peaks/windswept, mycelium on mushroom).
+- `TerraScribeChunkGenerator.buildSurface` implemented — paints top + 3 subsurface blocks per column based on biome.
+- World preset JSON updated to list ~47 vanilla overworld biomes explicitly (tags don't resolve at preset-codec time).
+
 ### Added — Milestone 1 (custom ChunkGenerator)
 
 - Pure-math noise stack at `worldgen.noise`: `NoiseField` interface, vendored 2D `SimplexNoise` (Stefan Gustavson algorithm), normalized fBm `FractalNoise`. Zero Minecraft API references; JUnit-tested (9 tests).

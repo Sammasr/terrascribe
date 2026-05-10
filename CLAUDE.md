@@ -10,21 +10,38 @@ The full specification is canonical: [`docs/SPEC.md`](docs/SPEC.md). When the sp
 
 ## Current milestone
 
-**Milestone 2 — Surface + Biomes.** Climate model → biome assignment, surface rules apply correct blocks, modded biomes auto-discovered.
+**Milestone 3 — Erosion.** Hydraulic erosion simulator applied to the heightmap; mountains look weathered.
 
 See `docs/SPEC.md` §9 for the full milestone table.
 
-### Milestone 2 — Definition of Done (draft — refine at session start)
+### Milestone 3 — Definition of Done (draft — refine at session start)
 
-- [ ] `ClimateSampler` — pure-math `(x, z)` → `(temperature, humidity)`. Layered noise + a latitude-bias term so north is colder. Unit-tested.
-- [ ] `BiomeMapper` — pure-math decision matrix `(climate, height, terrainType)` → `ResourceKey<Biome>`. Start with a handful of vanilla overworld biomes (Plains, Desert, Forest, Taiga, Mountains, Beach, Ocean) and a fallback. Unit-tested.
-- [ ] `ModdedBiomeRegistry` — at world creation, query the BIOME registry for everything in `is_overworld`, group by climate signature, inject into `BiomeMapper` decision matrix alongside vanilla. Hook `ServerAboutToStartEvent` (NOT static registries — biomes aren't fully populated until world load).
-- [ ] Config TOML (`config/terrascribe-common.toml`) with a modded-biome blocklist option.
-- [ ] `TerraScribeBiomeSource` rewritten to use `BiomeMapper` + `ClimateSampler` instead of the M1 single-biome placeholder.
-- [ ] `TerraScribeChunkGenerator.buildSurface` implemented — at minimum: grass + dirt cap on Plains/Forest-style, sand on Desert/Beach, stone exposed on Mountains. Use `SurfaceRules.sequence(...)` to build programmatically.
-- [ ] GameTest: at fixed seed + fixed coordinates, assert specific biomes appear; assert top block matches biome.
-- [ ] `docs/PLAYTEST.md` M2 checklist, `docs/COMPATIBILITY.md` first cut (vanilla pass, BoP, Terralith deferred to M8 with config tag-based blocklist hint).
-- [ ] CHANGELOG `[Unreleased]` entries.
+- [ ] `ErosionSimulator` (pure math) — Lague-style droplet hydraulic erosion. Configurable droplet count, inertia, capacity, deposition, erosion rate.
+- [ ] `RegionCache` (pure math wrt MC) — 512×512 regions, bounded LRU, eviction on world close. Caches per-region heightmaps + their erosion results so we don't re-run erosion per chunk.
+- [ ] Hook erosion into chunk gen path: heightmap is generated → erosion is applied per-region → chunk fills sample from eroded heightmap.
+- [ ] Visible result: mountains have erosion patterns, valleys carved by water flow. No flat-shoulder peaks.
+- [ ] Unit tests for `ErosionSimulator`: determinism, that elevation drops near droplet paths (visible erosion), and that the heightmap envelope is preserved.
+- [ ] `docs/ARCHITECTURE.md` first cut (still owed from M1).
+- [ ] `docs/PLAYTEST.md` M3 checklist; `docs/PERF.md` first cut with baseline.
+- [ ] CHANGELOG.
+
+### Milestone 2 — Surface + Biomes (PASSED-pending visual verification 2026-05-10)
+
+- [x] `ClimateSampler` (pure math, `worldgen.biome.climate`) — `(x, z) → Climate(temperature, humidity)`. Two-channel noise plus a `sin(z * f) * s` latitude bias for climate bands. 7 tests.
+- [x] `BiomeMapper` decision matrix (`worldgen.biome`) — pure math, `Climate → ClimateBucket(Coolness, Wetness)`. Elevation axis deliberately deferred to M3+. 4 tests.
+- [x] `TerraScribeBiomeSource` rewritten — codec field is `HolderSet<Biome>` (explicit list); buckets biomes by vanilla `temperature`+`downfall`; picks deterministically per quart-coord.
+- [x] `ModdedBiomeRegistry` — `ServerAboutToStartEvent` listener that scans the biome registry for `minecraft:is_overworld`-tagged entries, classifies them, and feeds them into the BiomeSource lookup pool via a static map. Sidesteps the Mojang tag/preset load-order issue (tag refs in preset codecs resolve as empty).
+- [x] `TerraScribeConfig` — `config/terrascribe-common.toml` with `biomeBlocklist` (full IDs or `namespace:*` wildcards).
+- [x] `SurfaceLayers` biome-ID-based top/sub block mapper + `TerraScribeChunkGenerator.buildSurface` implemented. No vanilla `SurfaceRules` (would require a `NoiseChunk` and switching to `NoiseBasedChunkGenerator`).
+- [x] `runServer` smoke test: 53 overworld biomes discovered across 9 climate buckets, server Done in 1.735 s, zero errors.
+- [ ] User-confirmed visual playtest pass (pending).
+- [ ] ~~GameTest~~ — deferred again; design slipping toward M4 when we have rivers worth asserting.
+- [x] `docs/PLAYTEST.md` M2 section appended.
+- [x] `docs/COMPATIBILITY.md` first cut.
+- [ ] `docs/ARCHITECTURE.md` — still owed from M1, deferred to M3.
+- [x] CHANGELOG entries.
+
+## M2 design decisions (locked at session start)
 
 ### Milestone 0 — Bootstrap (PASSED 2026-05-10)
 
@@ -68,6 +85,28 @@ Two Explore agents digested `references/TerraForged/` and `references/ReTerraFor
 - No mixins. NeoForge has clean API extension points; we use those.
 - No "density-function-as-glue" hack to drive vanilla biome placement. We subclass `BiomeSource` cleanly.
 - No patching `NoiseGeneratorSettings` at runtime. We register a real `WorldPreset` JSON.
+
+## M2 reference notes (session 3, 2026-05-10)
+
+Two more Explore agents on TerraForged + ReTerraForged. Both landed on similar M2-relevant takeaways:
+
+- **Climate is noise + latitude.** `BiomeNoise.java` does two-stage noise (region + local) plus a sine-based latitude bias plus a height falloff term so mountains are colder. We adopt the simple shape: independent temperature + humidity FractalNoise fields plus a `sin(z * f) * strength` latitude term.
+- **Biome assignment is a 2D lookup table.** `BiomeType.java` indexes by `(temperature_bucket, humidity_bucket)` with O(1) lookup and a curve that caps humidity by temperature. We do a simpler bucket grid (`Coolness × Wetness × Elevation`) but the lookup-table shape is right.
+- **Surface rules: RTF builds custom `SurfaceRules.RuleSource` types** (Strata, Layered, Noise) and registers them in the codec registry. **Premature for us at M2** — vanilla `SurfaceRules` requires a `NoiseChunk` which requires a `NoiseRouter` which requires `NoiseGeneratorSettings`. Since we don't extend `NoiseBasedChunkGenerator`, we sidestep the whole stack and write a simple per-column surface layer in `buildSurface` that just rewrites top blocks based on the biome at each column. Full SurfaceRules can land at M3/M4 when we revisit.
+- **Cell value object** — RTF threads a 23-field mutable `Cell` through the pipeline. For M2 we use a `Climate(float temperature, float humidity)` record only; we don't need the full Cell yet.
+- **Modded biome integration — RTF doesn't do it dynamically.** RTF tags vanilla biomes statically in `PresetBiomeTagsProvider` at data-gen time. We do better: our biome source's codec field is a `HolderSet<Biome>` referencing a tag (`#c:is_overworld`), so any biome from any mod that self-tags `c:is_overworld` automatically participates. NeoForge's biome tag convention covers this for well-behaved mods. Misbehaving mods can be added explicitly via config tag entry; user-blocked biomes via the blocklist config.
+
+## M2 design decisions (locked at session start)
+
+| Decision | Rationale |
+|---|---|
+| Still NOT extending `NoiseBasedChunkGenerator`. | M2 introduces `buildSurface`, which in vanilla pipeline requires a `NoiseChunk` (needing `NoiseRouter` / `NoiseGeneratorSettings`). We instead implement a simple per-column surface rewrite in `buildSurface`: read biome → pick top block → place top + a few subsurface blocks. Sidesteps the whole vanilla NoiseChunk machinery. SurfaceRules-proper revisit at M3/M4. |
+| Biome source codec field: `HolderSet<Biome>` referencing the `c:is_overworld` tag. | NeoForge convention. Modded biomes self-tagging get automatic inclusion — no `ServerAboutToStartEvent` registry walk needed. Skips a class of fragility (mod load order, missing registry sync). |
+| Climate buckets: 3 temperature × 3 humidity = 9 buckets (Elevation axis dropped during implementation). | Elevation in the bucket would require height info that `BiomeSource.getNoiseBiome` doesn't carry; threading it through is more plumbing than M2 needs. Elevation-driven biome selection waits for M3 when erosion needs a shared heightmap anyway. |
+| Bucketing modded biomes by their vanilla `temperature` and `downfall`. | These are the only universally-available climate values on `Biome`. Spec §14 explicitly accepts heuristics for biomes without explicit climate data. |
+| Config TOML for blocklist via `ModConfigSpec`. | Per-spec §14. Single setting: list of biome resource locations (or `namespace:*` wildcards) to exclude. |
+| Tag references in world-preset codec are empty at deserialization time — we use an explicit ~47-biome vanilla list in the preset JSON and a `ServerAboutToStartEvent`-driven side-channel for runtime discovery. | Discovered during M2 implementation: Mojang's load order resolves tags AFTER world presets, so `#minecraft:is_overworld` decodes as an empty `HolderSet`. The side-channel approach is spec §14's intent anyway; the explicit list just keeps the preset codec working without depending on the discovery to have run. |
+| No vanilla `SurfaceRules` at M2; per-column biome-id-based top/sub mapper in `buildSurface` instead. | Vanilla `SurfaceSystem` needs a `NoiseChunk` built from a `NoiseRouter`, which means `NoiseBasedChunkGenerator`. Sidestep the whole stack: directly read biome and write top + 3 subsurface blocks. We can swap in real `SurfaceRules` at M3/M4 if it pays for itself. |
 
 ## M1 design decisions (locked at session start)
 
@@ -148,6 +187,17 @@ Pulled from `docs/SPEC.md` §18:
 - Initialized git repo. Repo-local identity `Sammasr / Samueltherobinson@gmail.com`. Initial commit `73c804f`.
 - Created and pushed public GitHub repo: <https://github.com/Sammasr/terrascribe>. Tagged `v0.0.1-alpha`. CI build + release workflows triggered.
 - User reply "M0 pass" — milestone closed.
+
+### 2026-05-10 — Session 3 (M2 — Surface + Biomes)
+
+- Two more Explore agents on TF/RTF; both confirmed the climate noise + 2D-bucket-lookup pattern and called out the dynamic modded-biome discovery as the right modern approach (RTF only does static tag providers at data-gen).
+- Wrote `Climate`/`ClimateSampler`/`ClimateBucket`/`BiomeMapper` pure-math layer. 11 new JUnit tests, all green.
+- Rewrote `TerraScribeBiomeSource` with HolderSet codec + per-bucket pools. Found and worked around the Mojang tag/preset load-order issue: `#minecraft:is_overworld` decodes as empty at preset-codec time. Switched preset JSON to an explicit ~47-biome vanilla list + added `ModdedBiomeRegistry` static side-channel populated at `ServerAboutToStartEvent` with biomes that ARE in the tag (registry is populated by then).
+- Added `TerraScribeConfig` (`ModConfigSpec`) with `biomeBlocklist` setting; honored at both static bucketing time and runtime discovery time.
+- Wrote `SurfaceLayers` + implemented `TerraScribeChunkGenerator.buildSurface` — biome-ID-based top + 3 subsurface blocks per column. No vanilla `SurfaceRules`.
+- `runServer` smoke test: "biome discovery: 53 overworld biomes across 9 climate buckets", Done in 1.735 s, zero errors.
+- Pending: visual playtest pass.
+- Next: M3 — hydraulic erosion + region cache.
 
 ### 2026-05-10 — Session 2 (M1 — custom ChunkGenerator → M1 pass)
 
