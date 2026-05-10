@@ -1,0 +1,66 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Setup JDK 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build
+        run: ./gradlew build --stacktrace
+
+      - name: Collect built jars
+        id: jars
+        run: |
+          ls -la build/libs/
+          echo "primary=$(ls build/libs/terrascribe-*.jar | head -n1)" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/libs/*.jar
+          generate_release_notes: true
+          # All pre-1.0 tags are pre-releases.
+          prerelease: ${{ !startsWith(github.ref_name, 'v1.') && !startsWith(github.ref_name, 'v2.') && !startsWith(github.ref_name, 'v3.') }}
+
+      # TODO: add MODRINTH_TOKEN to repo secrets (Settings → Secrets and variables → Actions) before this step will run.
+      - name: Publish to Modrinth & CurseForge
+        if: ${{ env.MODRINTH_TOKEN != '' || env.CURSEFORGE_TOKEN != '' }}
+        uses: Kir-Antipov/mc-publish@v3
+        env:
+          MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
+          CURSEFORGE_TOKEN: ${{ secrets.CURSEFORGE_TOKEN }}
+        with:
+          # TODO: fill these in once the Modrinth/CurseForge projects exist.
+          # modrinth-id: <slug-or-id>
+          # curseforge-id: <numeric-project-id>
+          modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
+          curseforge-token: ${{ secrets.CURSEFORGE_TOKEN }}
+          files: build/libs/terrascribe-*.jar
+          name: TerraScribe ${{ github.ref_name }}
+          version: ${{ github.ref_name }}
+          version-type: ${{ startsWith(github.ref_name, 'v0.') && 'alpha' || 'release' }}
+          loaders: neoforge
+          game-versions: 1.21.1
+          java: 21

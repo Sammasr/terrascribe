@@ -1,0 +1,35 @@
+# eclipse
+bin
+*.launch
+.settings
+.metadata
+.classpath
+.project
+
+# idea — ignore most IDE state, but keep generated run configurations
+# (NeoForge MDK generates these and the spec wants them committed)
+.idea/*
+!.idea/runConfigurations/
+out
+*.ipr
+*.iws
+*.iml
+
+# gradle
+build
+.gradle
+
+# other
+eclipse
+run
+runs
+run-data
+repo
+
+# Reference repos — read-only study material, not part of the build
+references/
+
+# logs and OS junk
+*.log
+.DS_Store
+Thumbs.db
