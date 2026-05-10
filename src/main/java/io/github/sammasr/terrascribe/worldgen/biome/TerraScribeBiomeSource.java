@@ -47,10 +47,12 @@ public final class TerraScribeBiomeSource extends BiomeSource {
             ).apply(instance, TerraScribeBiomeSource::new));
 
     private static final int CLIMATE_SEED = 0;
+    private static final int VARIANT_SEED = 0x1f8b9c5d;
 
     private final HolderSet<Biome> allBiomes;
     private final ClimateSampler climateSampler;
     private final BiomeMapper biomeMapper;
+    private final NoiseField biomeVariantNoise;
     private final Map<ClimateBucket, List<Holder<Biome>>> bucketedBiomes;
     private final Holder<Biome> fallback;
 
@@ -72,6 +74,10 @@ public final class TerraScribeBiomeSource extends BiomeSource {
         final NoiseField humidityNoise = new FractalNoise(new SimplexNoise(), 4, 2f, 0.5f, 0.0008f);
         this.climateSampler = new ClimateSampler(temperatureNoise, humidityNoise, CLIMATE_SEED);
         this.biomeMapper = new BiomeMapper();
+        // Variant noise picks between biomes within a climate bucket. Low frequency (features
+        // ~600 blocks across) so patches are naturally large — the per-quart hash version of
+        // this produced 4-block speckle which read as broken to the eye.
+        this.biomeVariantNoise = new FractalNoise(new SimplexNoise(), 2, 2f, 0.5f, 0.0015f);
         this.bucketedBiomes = bucketBiomes(snapshot);
     }
 
@@ -101,9 +107,15 @@ public final class TerraScribeBiomeSource extends BiomeSource {
         if (total == 0) {
             return this.fallback;
         }
-        // Deterministic pick — same (xQuart, zQuart) always produces the same biome.
-        // Indices [0, ownSize) reach the explicit codec list; [ownSize, total) reach modded extras.
-        final int index = Math.floorMod(positionHash(xQuart, zQuart), total);
+        // Pick within bucket using a low-frequency continuous noise field so biome patches
+        // are ~500 blocks across with organic (not axis-aligned) boundaries. The variant
+        // value is in [-1, 1]; remap to [0, 1) and floor into the bucket pool.
+        final float variant = this.biomeVariantNoise.sample(blockX, blockZ, VARIANT_SEED);
+        final float normalized = (variant + 1f) * 0.5f;
+        int index = (int) (normalized * total);
+        if (index >= total) {
+            index = total - 1;
+        }
         return index < ownSize ? ownPool.get(index) : moddedPool.get(index - ownSize);
     }
 
@@ -146,12 +158,4 @@ public final class TerraScribeBiomeSource extends BiomeSource {
     private static float clamp(final float value, final float min, final float max) {
         return value < min ? min : (value > max ? max : value);
     }
-
-    /** Cheap 32-bit position hash used to pick a biome deterministically from a bucket pool. */
-    private static int positionHash(final int x, final int z) {
-        int h = x * 0x27d4eb2d ^ z * 1597334677;
-        h = (h ^ (h >>> 13)) * 1274126177;
-        return h ^ (h >>> 16);
-    }
-
 }
