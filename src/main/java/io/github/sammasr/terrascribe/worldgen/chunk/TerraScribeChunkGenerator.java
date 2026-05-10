@@ -44,9 +44,12 @@ public final class TerraScribeChunkGenerator extends ChunkGenerator {
     private static final int SEA_LEVEL = 63;
 
     // Placeholder terrain parameters. Real per-preset config lands in Milestone 5.
-    private static final int BASE_HEIGHT = 70;
-    private static final float AMPLITUDE = 30f;
-    private static final float FREQUENCY = 0.005f;
+    // BASE_HEIGHT=90, AMPLITUDE=60, FREQUENCY=0.003 chosen at M3 polish so peaks reach ~y=150
+    // (snowy-mountain territory) and valleys drop to ~y=30 — a 120-block envelope gives the
+    // erosion droplets meaningful slopes to carve and makes the weathering visually obvious.
+    private static final int BASE_HEIGHT = 90;
+    private static final float AMPLITUDE = 60f;
+    private static final float FREQUENCY = 0.003f;
     private static final int OCTAVES = 4;
     private static final float LACUNARITY = 2f;
     private static final float GAIN = 0.5f;
