@@ -42,14 +42,19 @@ public final class ModdedBiomeRegistry {
     private static final TagKey<Biome> IS_OVERWORLD = TagKey.create(
             Registries.BIOME, ResourceLocation.fromNamespaceAndPath("minecraft", "is_overworld"));
 
-    private static volatile Map<ClimateBucket, List<Holder<Biome>>> bucketed = Map.of();
+    private static volatile Map<ClimateBucket, List<Holder<Biome>>> bucketedLand = Map.of();
+    private static volatile List<Holder<Biome>> oceans = List.of();
 
     private ModdedBiomeRegistry() {
         // utility class
     }
 
-    public static Map<ClimateBucket, List<Holder<Biome>>> bucketedBiomes() {
-        return bucketed;
+    public static Map<ClimateBucket, List<Holder<Biome>>> bucketedLandBiomes() {
+        return bucketedLand;
+    }
+
+    public static List<Holder<Biome>> oceanBiomes() {
+        return oceans;
     }
 
     public static void onServerAboutToStart(final ServerAboutToStartEvent event) {
@@ -57,7 +62,8 @@ public final class ModdedBiomeRegistry {
         final HolderSet.Named<Biome> overworldBiomes = biomeRegistry.getOrCreateTag(IS_OVERWORLD);
 
         final Map<ClimateBucket, List<Holder<Biome>>> buckets = new HashMap<>();
-        int total = 0;
+        final List<Holder<Biome>> oceanList = new ArrayList<>();
+        int landCount = 0;
         int blocked = 0;
         for (final Holder<Biome> holder : overworldBiomes) {
             final ResourceLocation id = holder.unwrapKey().map(k -> k.location()).orElse(null);
@@ -65,13 +71,18 @@ public final class ModdedBiomeRegistry {
                 blocked++;
                 continue;
             }
+            if (TerraScribeBiomeSource.isOcean(holder)) {
+                oceanList.add(holder);
+                continue;
+            }
             final ClimateBucket bucket = TerraScribeBiomeSource.classifyVanillaBiome(holder.value());
             buckets.computeIfAbsent(bucket, k -> new ArrayList<>()).add(holder);
-            total++;
+            landCount++;
         }
-        bucketed = Map.copyOf(buckets);
+        bucketedLand = Map.copyOf(buckets);
+        oceans = List.copyOf(oceanList);
         LOGGER.info(
-                "[TerraScribe] biome discovery: {} overworld biomes across {} climate buckets ({} blocked by config)",
-                total, buckets.size(), blocked);
+                "[TerraScribe] biome discovery: {} land biomes across {} climate buckets, {} ocean biomes ({} blocked by config)",
+                landCount, buckets.size(), oceanList.size(), blocked);
     }
 }

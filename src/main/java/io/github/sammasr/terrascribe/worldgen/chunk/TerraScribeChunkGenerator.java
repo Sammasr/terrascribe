@@ -47,12 +47,16 @@ public final class TerraScribeChunkGenerator extends ChunkGenerator {
     // BASE_HEIGHT=90, AMPLITUDE=60, FREQUENCY=0.003 chosen at M3 polish so peaks reach ~y=150
     // (snowy-mountain territory) and valleys drop to ~y=30 — a 120-block envelope gives the
     // erosion droplets meaningful slopes to carve and makes the weathering visually obvious.
-    private static final int BASE_HEIGHT = 90;
-    private static final float AMPLITUDE = 60f;
-    private static final float FREQUENCY = 0.003f;
-    private static final int OCTAVES = 4;
-    private static final float LACUNARITY = 2f;
-    private static final float GAIN = 0.5f;
+    //
+    // KEEP IN SYNC with TerraScribeBiomeSource — it samples the same noise field to decide
+    // ocean vs land biomes. Until M5 introduces a shared HeightmapConfig record we just
+    // duplicate the constants.
+    public static final int BASE_HEIGHT = 90;
+    public static final float AMPLITUDE = 60f;
+    public static final float FREQUENCY = 0.003f;
+    public static final int OCTAVES = 4;
+    public static final float LACUNARITY = 2f;
+    public static final float GAIN = 0.5f;
 
     // M3 region cache + erosion config.
     private static final int REGION_SIZE = 256;
@@ -85,6 +89,20 @@ public final class TerraScribeChunkGenerator extends ChunkGenerator {
     /** Lazily built on first chunk fill once we have a {@link RandomState} to derive a seed from. */
     private volatile RegionCache regionCache;
     private volatile int worldSeed;
+
+    /**
+     * The last-published world seed — exposed so {@link io.github.sammasr.terrascribe.worldgen.biome.TerraScribeBiomeSource}
+     * can sample the same heightmap noise we do for elevation-aware biome selection. This is
+     * a static singleton because BiomeSource has no way to retrieve the seed from its own API
+     * (Climate.Sampler doesn't expose it). Set as a side-effect of {@link #regionCache(RandomState)}
+     * — which is now also triggered from {@link #createBiomes} so biome lookups see the seed
+     * before the first chunk fills.
+     */
+    private static volatile int currentWorldSeed;
+
+    public static int currentWorldSeed() {
+        return currentWorldSeed;
+    }
 
     public TerraScribeChunkGenerator(final BiomeSource biomeSource) {
         super(biomeSource);
@@ -284,10 +302,24 @@ public final class TerraScribeChunkGenerator extends ChunkGenerator {
                 return cache;
             }
             this.worldSeed = random.aquiferRandom().at(0, 0, 0).nextInt();
+            currentWorldSeed = this.worldSeed;
             cache = new RegionCache(REGION_SIZE, MAX_CACHED_REGIONS, this::buildRegion);
             this.regionCache = cache;
             return cache;
         }
+    }
+
+    @Override
+    public java.util.concurrent.CompletableFuture<net.minecraft.world.level.chunk.ChunkAccess> createBiomes(
+            final RandomState random,
+            final net.minecraft.world.level.levelgen.blending.Blender blender,
+            final net.minecraft.world.level.StructureManager structureManager,
+            final net.minecraft.world.level.chunk.ChunkAccess chunk) {
+        // Make sure the world-seed singleton is set before biome lookups happen. createBiomes
+        // is called before fillFromNoise; without this hook BiomeSource would see the default
+        // seed for the first chunk's biome assignment.
+        regionCache(random);
+        return super.createBiomes(random, blender, structureManager, chunk);
     }
 
     private RegionHeightmap buildRegion(final int regionX, final int regionZ) {

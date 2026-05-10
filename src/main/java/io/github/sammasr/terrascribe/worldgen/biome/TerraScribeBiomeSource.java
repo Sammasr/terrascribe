@@ -5,6 +5,7 @@ import com.mojang.serialization.codecs.RecordCodecBuilder;
 import io.github.sammasr.terrascribe.TerraScribeConfig;
 import io.github.sammasr.terrascribe.worldgen.biome.climate.Climate;
 import io.github.sammasr.terrascribe.worldgen.biome.climate.ClimateSampler;
+import io.github.sammasr.terrascribe.worldgen.chunk.TerraScribeChunkGenerator;
 import io.github.sammasr.terrascribe.worldgen.noise.FractalNoise;
 import io.github.sammasr.terrascribe.worldgen.noise.NoiseField;
 import io.github.sammasr.terrascribe.worldgen.noise.SimplexNoise;
@@ -48,12 +49,16 @@ public final class TerraScribeBiomeSource extends BiomeSource {
 
     private static final int CLIMATE_SEED = 0;
     private static final int VARIANT_SEED = 0x1f8b9c5d;
+    private static final int SEA_LEVEL = 63;
 
     private final HolderSet<Biome> allBiomes;
     private final ClimateSampler climateSampler;
     private final BiomeMapper biomeMapper;
     private final NoiseField biomeVariantNoise;
-    private final Map<ClimateBucket, List<Holder<Biome>>> bucketedBiomes;
+    /** Matches {@link TerraScribeChunkGenerator}'s terrain noise so elevation decisions align. */
+    private final NoiseField heightmapNoise;
+    private final Map<ClimateBucket, List<Holder<Biome>>> bucketedLandBiomes;
+    private final List<Holder<Biome>> oceanBiomes;
     private final Holder<Biome> fallback;
 
     public TerraScribeBiomeSource(final HolderSet<Biome> allBiomes) {
@@ -78,7 +83,19 @@ public final class TerraScribeBiomeSource extends BiomeSource {
         // ~600 blocks across) so patches are naturally large — the per-quart hash version of
         // this produced 4-block speckle which read as broken to the eye.
         this.biomeVariantNoise = new FractalNoise(new SimplexNoise(), 2, 2f, 0.5f, 0.0015f);
-        this.bucketedBiomes = bucketBiomes(snapshot);
+        // Same params as TerraScribeChunkGenerator's terrain noise — must stay in sync.
+        this.heightmapNoise = new FractalNoise(
+                new SimplexNoise(),
+                TerraScribeChunkGenerator.OCTAVES,
+                TerraScribeChunkGenerator.LACUNARITY,
+                TerraScribeChunkGenerator.GAIN,
+                TerraScribeChunkGenerator.FREQUENCY);
+
+        final List<Holder<Biome>> oceans = new ArrayList<>();
+        final List<Holder<Biome>> land = new ArrayList<>();
+        partitionByOceanLandClassification(snapshot, oceans, land);
+        this.oceanBiomes = List.copyOf(oceans);
+        this.bucketedLandBiomes = bucketBiomes(land);
     }
 
     @Override
@@ -93,26 +110,49 @@ public final class TerraScribeBiomeSource extends BiomeSource {
 
     @Override
     public Holder<Biome> getNoiseBiome(final int xQuart, final int yQuart, final int zQuart, final Sampler sampler) {
-        // Climate is sampled in block coordinates, not quart coordinates.
+        // Climate / heightmap noise are sampled in block coordinates, not quart coordinates.
         final int blockX = QuartPos.toBlock(xQuart);
         final int blockZ = QuartPos.toBlock(zQuart);
+
+        // Approximate column height from the same noise field the chunk generator uses
+        // (without erosion — erosion shifts heights by ~5-10 blocks, which is small enough
+        // to not matter for the "is this an ocean column?" decision).
+        final int worldSeed = TerraScribeChunkGenerator.currentWorldSeed();
+        final float heightNoise =
+                this.heightmapNoise.sample(blockX, blockZ, worldSeed);
+        final int approxHeight =
+                TerraScribeChunkGenerator.BASE_HEIGHT + Math.round(heightNoise * TerraScribeChunkGenerator.AMPLITUDE);
+
+        // Variant noise picks a deterministic index within the matched pool. Same noise used
+        // for both ocean and land selection.
+        final float variant = this.biomeVariantNoise.sample(blockX, blockZ, VARIANT_SEED);
+        final float normalized = (variant + 1f) * 0.5f;
+
+        if (approxHeight < SEA_LEVEL) {
+            // Ocean column: pick from the ocean pools (own + modded).
+            final List<Holder<Biome>> moddedOceans = ModdedBiomeRegistry.oceanBiomes();
+            return pickFromPools(this.oceanBiomes, moddedOceans, normalized);
+        }
+
+        // Land column: bucket by climate and pick from the matching land pool.
         final Climate climate = this.climateSampler.sample(blockX, blockZ);
         final ClimateBucket bucket = this.biomeMapper.bucketFor(climate);
+        final List<Holder<Biome>> ownLand = this.bucketedLandBiomes.get(bucket);
+        final List<Holder<Biome>> moddedLand = ModdedBiomeRegistry.bucketedLandBiomes().getOrDefault(bucket, List.of());
+        return pickFromPools(ownLand, moddedLand, normalized);
+    }
 
-        final List<Holder<Biome>> ownPool = this.bucketedBiomes.get(bucket);
-        final List<Holder<Biome>> moddedPool = ModdedBiomeRegistry.bucketedBiomes().getOrDefault(bucket, List.of());
+    private Holder<Biome> pickFromPools(
+            final List<Holder<Biome>> ownPool,
+            final List<Holder<Biome>> moddedPool,
+            final float normalizedVariant) {
         final int ownSize = ownPool == null ? 0 : ownPool.size();
-        final int moddedSize = moddedPool.size();
+        final int moddedSize = moddedPool == null ? 0 : moddedPool.size();
         final int total = ownSize + moddedSize;
         if (total == 0) {
             return this.fallback;
         }
-        // Pick within bucket using a low-frequency continuous noise field so biome patches
-        // are ~500 blocks across with organic (not axis-aligned) boundaries. The variant
-        // value is in [-1, 1]; remap to [0, 1) and floor into the bucket pool.
-        final float variant = this.biomeVariantNoise.sample(blockX, blockZ, VARIANT_SEED);
-        final float normalized = (variant + 1f) * 0.5f;
-        int index = (int) (normalized * total);
+        int index = (int) (normalizedVariant * total);
         if (index >= total) {
             index = total - 1;
         }
@@ -132,6 +172,33 @@ public final class TerraScribeBiomeSource extends BiomeSource {
             map.computeIfAbsent(bucket, k -> new ArrayList<>()).add(holder);
         }
         return Map.copyOf(map);
+    }
+
+    /**
+     * Splits the given biome holders into "ocean" and "land" lists. The classifier is path-
+     * based: anything whose registry path contains {@code "ocean"} goes in the ocean pool;
+     * everything else is treated as land. Blocklisted biomes are skipped from both pools.
+     * Public so {@link ModdedBiomeRegistry} can apply identical rules to the biomes it
+     * discovers at server start.
+     */
+    public static void partitionByOceanLandClassification(
+            final List<Holder<Biome>> biomes,
+            final List<Holder<Biome>> oceansOut,
+            final List<Holder<Biome>> landOut) {
+        for (final Holder<Biome> holder : biomes) {
+            if (holder.unwrapKey().map(k -> TerraScribeConfig.isBlocked(k.location())).orElse(false)) {
+                continue;
+            }
+            if (isOcean(holder)) {
+                oceansOut.add(holder);
+            } else {
+                landOut.add(holder);
+            }
+        }
+    }
+
+    public static boolean isOcean(final Holder<Biome> holder) {
+        return holder.unwrapKey().map(k -> k.location().getPath().contains("ocean")).orElse(false);
     }
 
     /**
