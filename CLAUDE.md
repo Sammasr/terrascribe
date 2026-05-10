@@ -27,19 +27,44 @@ See `docs/SPEC.md` §9 for the full milestone table.
 - [x] CI `build.yml` + `release.yml` workflows committed and triggering on push/tag.
 - [x] User confirmed "M0 pass" 2026-05-10.
 
-### Milestone 1 — Definition of Done (draft — refine at session start)
+### Milestone 1 — Definition of Done
 
-- [ ] Custom `BiomeSource` (`TerraScribeBiomeSource`) — minimal at first, a single placeholder biome (e.g. `minecraft:plains`) so the world type is registerable end-to-end.
-- [ ] Custom `ChunkGenerator` (`TerraScribeChunkGenerator extends NoiseBasedChunkGenerator` or direct `ChunkGenerator` subclass — TBD after re-reading TF/RTF references).
-- [ ] `WorldPreset` registered so "TerraScribe" appears in the world-creation type dropdown.
-- [ ] Noise stack: `NoiseField` interface + `SimplexNoise` + `FractalNoise` (pure JVM, no MC API).
-- [ ] `HeightmapGenerator` produces deterministic heightmap from seed (pure math, unit-testable).
-- [ ] Surface is stone-only at this milestone — no biomes-driven surface yet.
-- [ ] JUnit 5 set up; codec roundtrip test for any new registered codec; at least one noise math test.
-- [ ] GameTest: load TerraScribe world without errors.
-- [ ] `docs/PLAYTEST.md` updated with M1 checklist; `docs/ARCHITECTURE.md` first cut covering the noise + terrain + chunk packages.
-- [ ] CHANGELOG entry under `[Unreleased]`.
-- [ ] Commit + push.
+- [ ] Noise stack: `NoiseField` interface + `SimplexNoise` (2D, vendored) + `FractalNoise` (octave-summed fBm). Pure JVM, zero MC imports. JUnit tests: determinism, value range, seed independence.
+- [ ] `Heightmap` (functional interface `int heightAt(int x, int z)`) + `BasicHeightmapGenerator` (noise → height). Pure math, unit-testable.
+- [ ] `TerraScribeBiomeSource extends BiomeSource` — placeholder, returns `minecraft:plains` for all (x, y, z). Codec via `RecordCodecBuilder`.
+- [ ] `TerraScribeChunkGenerator extends ChunkGenerator` (direct, not `NoiseBasedChunkGenerator` — see design note below). Fills stone below heightmap, water at sea level 63 when height < 63, air above. Codec via `RecordCodecBuilder`.
+- [ ] DeferredRegisters wired for `BIOME_SOURCE` and `CHUNK_GENERATOR` codec registries. Both registered as `terrascribe:terrascribe`.
+- [ ] `data/terrascribe/worldgen/world_preset/terrascribe.json` so "TerraScribe" appears in create-world dropdown. Lang entry `generator.terrascribe.terrascribe` → "TerraScribe".
+- [ ] JUnit 5 wired up in `build.gradle`; codec roundtrip tests for chunk gen + biome source; noise math tests.
+- [ ] GameTest: load TerraScribe world without errors (deferred — may slip to M2 if it bloats).
+- [ ] `docs/PLAYTEST.md` appended with M1 checklist; `docs/ARCHITECTURE.md` first cut.
+- [ ] CHANGELOG `[Unreleased]` entries for each substantive piece.
+- [ ] Commit + push. `./gradlew runClient` shows TerraScribe world type, creates a world, terrain rolls, stone below surface, water at sea level — no errors in log.
+
+## Reference-study notes for Milestone 1
+
+Two Explore agents digested `references/TerraForged/` and `references/ReTerraForged/`. Both repos use the **same architectural shortcut** that our spec explicitly rejects: they do NOT subclass `ChunkGenerator` or `BiomeSource`; they mixin into vanilla `NoiseBasedChunkGenerator` and inject custom density functions for climate values. Their senior-engineer assessment of *that* approach: "for 1.21.1, use proper WorldPreset registration and DimensionGeneratorSettings codecs… write a true custom ChunkGenerator if you're starting fresh on NeoForge." That matches our spec §8. We do the proper-subclass thing.
+
+**What we ARE replicating:**
+- Pure-math noise layer with zero MC imports (`raccoonman.reterraforged.world.worldgen.noise.module.*` has ~40 noise operators implementing a `Noise compute(x,z,seed)` interface — exactly the pattern we want for `worldgen.noise.*`).
+- A `Cell`-style value object that carries per-location data (height, temperature, humidity, terrain type) through the pipeline. Cleaner than passing 5 floats around.
+- `RecordCodecBuilder` for record-style codecs; dispatched codecs (`byNameCodec().dispatch(...)`) for variant types when we add `TerrainType` later.
+- Tile-based caching of heightmap data per region. (Deferred to M3 when erosion makes recomputation expensive.)
+
+**What we are NOT taking:**
+- No mixins. NeoForge has clean API extension points; we use those.
+- No "density-function-as-glue" hack to drive vanilla biome placement. We subclass `BiomeSource` cleanly.
+- No patching `NoiseGeneratorSettings` at runtime. We register a real `WorldPreset` JSON.
+
+## M1 design decisions (locked at session start)
+
+| Decision | Rationale |
+|---|---|
+| Extend `ChunkGenerator` directly, NOT `NoiseBasedChunkGenerator`. | Spec §8 says `NoiseBasedChunkGenerator`, but at M1 a direct subclass is much simpler — no `NoiseGeneratorSettings` JSON, no `NoiseRouter` density function plumbing, no entanglement with vanilla cave / aquifer code we're not ready to wire to. We override the few abstract methods we actually need (`fillFromNoise`, `getBaseHeight`, `getBaseColumn`, sea level, gen depth) and stub the rest. Will revisit at M3 (erosion) or M4 (rivers) once integration with vanilla worldgen actually starts paying off. **Deviation from spec — flagged here.** |
+| `TerraScribeBiomeSource` returns `minecraft:plains` everywhere at M1. | Per spec §9, biomes land in M2 ("Surface + Biomes"). For M1 we need *something* that compiles; the placeholder isolates "world type registers correctly" from "biome assignment works correctly." |
+| WorldPreset registered via data-pack JSON (`data/terrascribe/worldgen/world_preset/`). | Modern Minecraft (1.21+) world types in the create-world dropdown come from the `WorldPreset` registry. Datapack JSON is the canonical Mojang pattern. Avoids the registry-patching kludge ReTerraForged uses on 1.20.2. |
+| No GameTest at M1 — defer to M2. | Setting up the GameTest harness for "world loads without errors" is meaningful infrastructure work. M1 is already a chunky milestone; let it land as runClient-verified for now, write the GameTest at M2 when we have actual biome assignment to assert against. |
+| Stone-only for M1, no surface rules. | Spec calls this out — "stone-only" is part of M1's DoD. Dirt + grass on top is M2 (surface rules + biomes). |
 
 ## How to run the game
 
